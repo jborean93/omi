@@ -1,0 +1,19 @@
+{
+    "container_image": "debian:8",
+    "package_manager": "apt",
+    "microsoft_repo": "https://packages.microsoft.com/config/debian/8/multiarch/packages-microsoft-prod.deb",
+    "build_deps": [
+        "g++",
+        "libkrb5-dev",
+        "libpam-dev",
+        "libssl-dev",
+        "lsb-release",
+        "make",
+        "openssl",
+        "pkg-config"
+    ],
+    "test_deps": [
+        "krb5-user",
+        "powershell"
+    ]
+}

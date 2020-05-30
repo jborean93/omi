@@ -1,0 +1,13 @@
+{
+    "container_image": "",
+    "package_manager": "brew",
+    "microsoft_repo": "",
+    "build_deps": [
+        "openssl",
+        "pkg-config"
+    ],
+    "test_deps": [
+        "openssl",
+        "cask:powershell"
+    ]
+}

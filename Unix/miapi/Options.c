@@ -716,8 +716,15 @@ MI_Result MI_CALL GenericOptions_AddCredentials(
 
         if (credentials->credentials.usernamePassword.username == NULL)
         {
+            // JBOREAN CHANGE: Added support for Kerberos credential from cache.
+            // Technically we should read WSMAN_OPTION_ALLOW_NEGOTIATE_IMPLICIT_CREDENTIALS but libpsrpclient from
+            // PowerShell doesn't pass that in.
             /* Illegal to not have a username */
-            miResult = MI_RESULT_INVALID_PARAMETER;
+            //miResult = MI_RESULT_INVALID_PARAMETER;
+            if (needToAddCredInstance)
+                miResult = MI_Instance_AddElement(credValueInstance, MI_T("Username"), NULL, MI_STRING, MI_FLAG_NULL);
+            else
+                miResult = MI_Instance_SetElement(credValueInstance, MI_T("Username"), NULL, MI_STRING, MI_FLAG_NULL);
         }
         else
         {

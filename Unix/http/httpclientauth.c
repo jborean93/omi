@@ -8,7 +8,7 @@
 */
 #include <config.h>
 #if AUTHORIZATION
-#if defined(macos)
+#if defined(is_macos)
 #include <GSS/GSS.h>
 #else
 #include <gssapi/gssapi.h>
@@ -38,13 +38,13 @@
 #define ENABLE_TRACING 1
 #define FORCE_TRACING  1
 
-#if GSS_USE_IOV && !defined(macos)
+#if GSS_USE_IOV && !defined(is_macos)
 #include "httpkrb5.h"
 #endif
 
 #if !defined(GSS_IO_BUFFER_TYPE_PADDING)
 #define GSS_IOV_BUFFER_TYPE_PADDING 9 // For the mac, this is normally in the header file
-                                      // /System/Library/Frameworks/GSS.framework/Headers/gssapi.h which is included in the 
+                                      // /System/Library/Frameworks/GSS.framework/Headers/gssapi.h which is included in the
                                       // GSS framework headers directory. However, its not coming through, and when it is included
                                       // directly, there are a large number of duplicate declarations. Its one number, and its
                                       //  not going to change so I just define it here. For linux, it is located in /usr/include/gssapi/gssapi_ext.h
@@ -97,7 +97,19 @@ typedef void SSL_CTX;
 
 #ifdef ENABLE_TRACING
 # define TRACING_LEVEL 4
+// JBOREAN CHANGE: Added logging functions
+#include <base/result.h>
+#include <base/logbase.h>
 #include <base/log.h>
+#define LOGE2 __LOGE
+#define LOGW2 __LOGW
+#define LOGD2 __LOGD
+#define LOGV2 __LOGV
+#else
+# define LOGE2(a)
+# define LOGW2(a)
+# define LOGD2(a)
+# define LOGV2(a)
 #endif
 
 
@@ -105,7 +117,7 @@ typedef void SSL_CTX;
 
 #include "httpclient_private.h"
 
-// dlsyms from the dlopen. These entry points are very useful, but not always supported 
+// dlsyms from the dlopen. These entry points are very useful, but not always supported
 // in every platform. So we dynamically load them as use them as available.
 
 typedef OM_uint32 KRB5_CALLCONV (*Gss_Acquire_Cred_With_Password_Func )(
@@ -132,7 +144,7 @@ typedef OM_uint32 KRB5_CALLCONV (*Gss_Accept_Sec_Context_Func)(OM_uint32 * minor
                                       gss_name_t * src_name,
                                       gss_OID * mech_type,
                                       gss_buffer_t output_token,
-                                      OM_uint32 * ret_flags, 
+                                      OM_uint32 * ret_flags,
                                       OM_uint32 * time_rec,
                                       gss_cred_id_t * delegated_cred_handle );
 
@@ -157,12 +169,12 @@ typedef OM_uint32 KRB5_CALLCONV (*Gss_Display_Status_Func)( OM_uint32 * minor_st
                                    OM_uint32 status_value,
                                    int status_type,
                                    const gss_OID mech_type,
-                                   OM_uint32 * message_context, 
+                                   OM_uint32 * message_context,
                                    gss_buffer_t status_string);
 
 typedef OM_uint32 KRB5_CALLCONV (*Gss_Import_Name_Func)(OM_uint32 * minor_status,
                                const gss_buffer_t input_name_buffer,
-                               const gss_OID input_name_type, 
+                               const gss_OID input_name_type,
                                gss_name_t * output_name);
 
 typedef OM_uint32 KRB5_CALLCONV (*Gss_Init_Sec_Context_Func)(OM_uint32 * minor_status,
@@ -191,8 +203,8 @@ typedef OM_uint32 KRB5_CALLCONV (*Gss_Inquire_Cred_Func)(OM_uint32 * minor_statu
                                       const gss_cred_id_t cred_handle,
                                       gss_name_t * name,
                                       OM_uint32  * lifetime_rec,
-                                      gss_cred_usage_t * cred_usage,  
-                                      gss_OID_set      * mechanisms); 
+                                      gss_cred_usage_t * cred_usage,
+                                      gss_OID_set      * mechanisms);
 
 typedef OM_uint32 KRB5_CALLCONV (*Gss_Release_Buffer_Func)(OM_uint32 * minor_status, gss_buffer_t buffer);
 typedef OM_uint32 KRB5_CALLCONV (*Gss_Release_Cred_Func)(OM_uint32 * minor_status, gss_cred_id_t * cred_handle);
@@ -229,7 +241,7 @@ typedef OM_uint32 KRB5_CALLCONV (*Gss_Wrap_Func)(OM_uint32 * minor_status,
                           const gss_buffer_t input_message_buffer,
                           int *conf_state, gss_buffer_t output_message_buffer);
 
-#if !defined(macos)
+#if !defined(is_macos)
 typedef krb5_error_code KRB5_CALLCONV
 (*krb5InitContextFn)(krb5_context *context);
 
@@ -260,7 +272,7 @@ typedef void KRB5_CALLCONV
 
 typedef enum { NOT_LOADED = 0, LOADING, LOADED } LoadState;
 
-typedef struct _Gss_Extensions 
+typedef struct _Gss_Extensions
 {
     LoadState gssLibLoaded;  /* Default is NOT_LOADED */
     void *libHandle;
@@ -290,11 +302,12 @@ typedef struct _Gss_Extensions
 #endif
 
     gss_OID Gss_Nt_Service_Name;
-    gss_OID Gss_Nt_HostBased_Service_Name;
-    gss_OID Gss_Krb5_Nt_Principal_Name;
+    // JBOREAN CHANGE: These are not used anywhere in the code.
+    // gss_OID Gss_Nt_HostBased_Service_Name;
+    // gss_OID Gss_Krb5_Nt_Principal_Name;
     gss_OID Gss_C_Nt_User_Name;
 
-#if !defined(macos)
+#if !defined(is_macos)
     krb5InitContextFn          krb5InitContext;
     krb5ParseNameFn            krb5ParseName;
     krb5GetInitCredsPasswordFn krb5GetInitCredsPassword;
@@ -311,11 +324,11 @@ static const char GSS_LIBRARY_NAME[] = CONFIG_GSSLIB;
 static const char KRB5_LIBRARY_NAME[] = CONFIG_KRB5LIB;
 
 
-MI_Boolean Gss_Oid_Equal(const gss_OID poid1, const gss_OID poid2) 
+MI_Boolean Gss_Oid_Equal(const gss_OID poid1, const gss_OID poid2)
 
 {
     if (poid1->length != poid2->length)
-    { 
+    {
         return MI_FALSE;
     }
 
@@ -358,28 +371,28 @@ _Success_(return == 0) int _ValidateClientCredentials(HttpClient_SR_SocketData *
               ERROR_ACCESS_DENIED,
               WSMAN_CIMERROR_PROBABLE_CAUSE_AUTHENTICATION_FAILURE,
               MI_T("credentials file and directory does not exist"),
-              NULL 
+              NULL
        };
 
    static Probable_Cause_Data AUTH_ERROR_CRED_DIR_PERMS = {
               ERROR_ACCESS_DENIED,
               WSMAN_CIMERROR_PROBABLE_CAUSE_AUTHENTICATION_FAILURE,
               MI_T("credentials file directory permissions must be user-only"),
-              NULL 
+              NULL
        };
 
    static Probable_Cause_Data AUTH_ERROR_CRED_FILE_PERMS = {
               ERROR_ACCESS_DENIED,
               WSMAN_CIMERROR_PROBABLE_CAUSE_AUTHENTICATION_FAILURE,
               MI_T("credentials file permissions must be user-only"),
-              NULL 
+              NULL
        };
 
    static Probable_Cause_Data OUT_OF_MEMORY_ERROR = {
               ERROR_INTERNAL_ERROR,
               WSMAN_CIMERROR_SERVER_LIMITS_EXCEEDED,
               MI_T("out of memory"),
-              NULL 
+              NULL
        };
 
 
@@ -419,7 +432,7 @@ _Success_(return == 0) int _ValidateClientCredentials(HttpClient_SR_SocketData *
             client->probableCause = &OUT_OF_MEMORY_ERROR;
             goto Err;
         }
-        
+
         {
             char *pstr = cred_dir;
             strcpy(pstr, home_dir);
@@ -434,7 +447,7 @@ _Success_(return == 0) int _ValidateClientCredentials(HttpClient_SR_SocketData *
             client->probableCause = &OUT_OF_MEMORY_ERROR;
             goto Err;
         }
-        
+
         {
             char *pstr = cred_file_path;
             strcpy(pstr, cred_dir);
@@ -465,9 +478,9 @@ _Success_(return == 0) int _ValidateClientCredentials(HttpClient_SR_SocketData *
         }
 
     }
-     
-    // Check to see the file exists and has the right permissions 
-        
+
+    // Check to see the file exists and has the right permissions
+
     {
         struct stat buf = {0};
         int rtn = stat(cred_file_path, &buf);
@@ -477,14 +490,14 @@ _Success_(return == 0) int _ValidateClientCredentials(HttpClient_SR_SocketData *
            if (ntlm_user_file)
            {
                // If we said it exists via the env variable it needs to be there.
-               
+
                client->probableCause = &AUTH_ERROR_CRED_DIR;
                goto Err;
            }
-           else 
+           else
            {
                // If we never said it was there and there is no ~/.omi/ntlmcred file,
-               // then the creds come from winbind. Thats fine. 
+               // then the creds come from winbind. Thats fine.
                //
                PAL_Free(cred_file_path);
                PAL_Free(cred_dir);
@@ -508,7 +521,7 @@ _Success_(return == 0) int _ValidateClientCredentials(HttpClient_SR_SocketData *
     }
 
     // Check the permissions on the directory. They need to be read-only owner
-        
+
     {
         struct stat buf = {0};
 
@@ -532,7 +545,7 @@ _Success_(return == 0) int _ValidateClientCredentials(HttpClient_SR_SocketData *
             client->probableCause = &AUTH_ERROR_CRED_DIR_PERMS;
             goto Err;
         }
-    }        
+    }
 
     setenv("NTLM_USER_FILE", cred_file_path, 1);
 
@@ -540,12 +553,12 @@ _Success_(return == 0) int _ValidateClientCredentials(HttpClient_SR_SocketData *
     PAL_Free(cred_dir);
     return 0;
 
-Err: 
+Err:
 
     trace_NtlmCredFileInvalid(cred_file_path);
 
     // Return probable cause in the context
-    if (cred_file_path && cred_file_path != ntlm_user_file ) 
+    if (cred_file_path && cred_file_path != ntlm_user_file )
     {
         PAL_Free(cred_file_path);
     }
@@ -578,11 +591,11 @@ static _Success_(return == 0) int _GssClientInitLibrary( _In_ void* data, _Outpt
     HttpClient_SR_SocketData *context = (HttpClient_SR_SocketData *)data;
 
 #if HEIMDAL
-    static const char *GSS_NT_USER_NAME_REF    = "__gss_c_nt_user_name_oid_desc";
-    static const char *GSS_NT_SERVICE_NAME_REF = "__gss_c_nt_hostbased_service_oid_desc";
+    static const char *GSS_NT_USER_NAME_REF           = "__gss_c_nt_user_name_oid_desc";
+    static const char *GSS_NT_SERVICE_NAME_REF        = "__gss_c_nt_hostbased_service_oid_desc";
 #else
-    static const char *GSS_NT_USER_NAME_REF    = "gss_nt_user_name";
-    static const char *GSS_NT_SERVICE_NAME_REF = "gss_nt_service_name_v2";
+    static const char *GSS_NT_USER_NAME_REF           = "gss_nt_user_name";
+    static const char *GSS_NT_SERVICE_NAME_REF        = "gss_nt_service_name_v2";
 #endif
 
 
@@ -737,7 +750,7 @@ static _Success_(return == 0) int _GssClientInitLibrary( _In_ void* data, _Outpt
         _g_gssClientState.Gss_Wrap   = (Gss_Wrap_Func) fn_handle;
 
 #if GSS_USE_IOV
-#if defined(macos)
+#if defined(is_macos)
         fn_handle = dlsym(libhandle, "__ApplePrivate_gss_unwrap_iov");
         if (!fn_handle)
         {
@@ -779,8 +792,8 @@ static _Success_(return == 0) int _GssClientInitLibrary( _In_ void* data, _Outpt
             trace_HTTP_GssFunctionNotPresent("gss_release_iov_buffer");
         }
         _g_gssClientState.Gss_Release_Iov_Buffer = (Gss_Release_Iov_Buffer_Func) fn_handle;
-#endif        
-#endif        
+#endif
+#endif
 
         fn_handle = dlsym(libhandle, GSS_NT_SERVICE_NAME_REF);
         if (!fn_handle)
@@ -807,6 +820,8 @@ static _Success_(return == 0) int _GssClientInitLibrary( _In_ void* data, _Outpt
        _g_gssClientState.Gss_C_Nt_User_Name  = *(gss_OID*)fn_handle;
 #endif
 
+// JBOREAN CHANGE: These imports aren't used anywhere in the code
+/*
         fn_handle = dlsym(libhandle, "GSS_C_NT_HOSTBASED_SERVICE");
         if (!fn_handle)
         {
@@ -830,10 +845,12 @@ static _Success_(return == 0) int _GssClientInitLibrary( _In_ void* data, _Outpt
 #else
        _g_gssClientState.Gss_Krb5_Nt_Principal_Name = *(gss_OID*)fn_handle;
 #endif
+*/
+
        _g_gssClientState.libHandle    = libhandle;
        _g_gssClientState.gssLibLoaded = LOADED;
         PAL_Atexit(_GssUnloadLibrary);
-      
+
         libhandle =  dlopen(KRB5_LIBRARY_NAME, RTLD_NOW | RTLD_GLOBAL);
 
         fn_handle = dlsym(libhandle, "krb5_init_context");
@@ -842,7 +859,7 @@ static _Success_(return == 0) int _GssClientInitLibrary( _In_ void* data, _Outpt
             trace_HTTP_GssFunctionNotPresent("krb5_init_context");
             goto failed;
         }
-#if !defined(macos)
+#if !defined(is_macos)
         _g_gssClientState.krb5InitContext = (krb5InitContextFn)fn_handle;
 
         fn_handle = dlsym(libhandle, "krb5_parse_name");
@@ -909,7 +926,7 @@ static _Success_(return == 0) int _GssClientInitLibrary( _In_ void* data, _Outpt
 
 void _WriteTraceFile(PathID id, const void *data, size_t size);
 
-/* 
+/*
    Convert the gss_buffer_t token to a WWW-Authorization string suitable for the http response header
  */
 
@@ -1006,10 +1023,12 @@ static void _ReportError(HttpClient_SR_SocketData * self, const char *msg,
 
 /*
  * Decrypts encrypted data in the data packet. Returns new header (with original content type and content length)
- * and the new data. releases the page. 
+ * and the new data. releases the page.
  * Returns true if it performed a change, false otherwise
  */
 
+// JBOREAN CHANGE: Use our own HttpClient_DecryptData that can actually parse the HTTP MIME payload.
+/*
 MI_Boolean HttpClient_DecryptData(_In_ HttpClient_SR_SocketData * handler, _Out_ HttpClientResponseHeader * pHeaders, _Out_ Page ** pData)
 {
     OM_uint32 maj_stat = 0;
@@ -1254,12 +1273,12 @@ MI_Boolean HttpClient_DecryptData(_In_ HttpClient_SR_SocketData * handler, _Out_
                     scanp = linelimit + 2;
                 }
                 else if (*scanp == '-' && scanp[1] == '-')
-                {    
+                {
 
                     // Start of new segment
 
                     break;
-                }    
+                }
                 else
                 {
                     // Bogus
@@ -1305,7 +1324,288 @@ MI_Boolean HttpClient_DecryptData(_In_ HttpClient_SR_SocketData * handler, _Out_
 
     (*_g_gssClientState.Gss_Release_Buffer)(&min_stat, &output_buffer);
 
-    // In oroder for this to work, we must leave the original page allocated, and leave it to the 
+    // In oroder for this to work, we must leave the original page allocated, and leave it to the
+    // caller to free the original data and recvBuffer
+
+    for (i = 0; i < pHeaders->sizeHeaders; i++ )
+    {
+        char **pvalue = NULL;
+
+        pvalue = (char**)(&pHeaders->headers[i].value);
+        if (strncasecmp(pHeaders->headers[i].name, CONTENT_TYPE, CONTENT_TYPE_LEN) == 0)
+        {
+            *pvalue = (char*)original_content_type;
+        }
+        else if (strncasecmp(pHeaders->headers[i].name, CONTENT_LENGTH, CONTENT_LENGTH_LEN) == 0)
+        {
+            *pvalue = (char*)content_len_str;
+        }
+    }
+
+    return MI_TRUE;
+}
+*/
+
+MI_Boolean HttpClient_DecryptData(_In_ HttpClient_SR_SocketData * handler, _Out_ HttpClientResponseHeader * pHeaders, _Out_ Page ** pData)
+{
+    OM_uint32 maj_stat = 0;
+    OM_uint32 min_stat = 0;
+    gss_buffer_desc input_buffer = { 0 };
+    gss_buffer_desc output_buffer = { 0 };
+    Page *page = NULL;
+    char *scanlimit = NULL;
+    char *scanp = NULL;
+    char *linep = NULL;
+    char *linelimit = NULL;
+    char *entryp = NULL;
+    char *entrylimit = NULL;
+    int flags = (int)handler->negoFlags&(GSS_C_INTEG_FLAG|GSS_C_CONF_FLAG);
+    uint32_t sig_len = 0;
+
+    int original_content_length = 0;
+    char original_content_type_save[1024] = { 0 };  // Longest possible content type?
+    char original_encoding_save[64] = { 0 };
+
+    char *original_content_type = NULL;
+    char *original_encoding = NULL;
+
+    MI_Boolean done = FALSE;
+    static const char ENCRYPTED_SEGMENT[] = "Encrypted Boundary";
+    static const size_t ENCRYPTED_SEGMENT_LEN = MI_COUNT(ENCRYPTED_SEGMENT) - 1;
+
+    static const char ORIGINAL_CONTENT[] = "OriginalContent:";
+    static const size_t ORIGINAL_CONTENT_LEN = MI_COUNT(ORIGINAL_CONTENT) - 1;
+
+    static const char TYPE_FIELD[] = "type=";
+    static const size_t TYPE_FIELD_LEN = MI_COUNT(TYPE_FIELD) - 1;
+
+    static const char CHARSET_FIELD[] = "charset=";
+    static const size_t CHARSET_FIELD_LEN = MI_COUNT(CHARSET_FIELD) - 1;
+
+    static const char LENGTH_FIELD[] = "length=";
+    static const size_t LENGTH_FIELD_LEN = MI_COUNT(LENGTH_FIELD) - 1;
+
+    static const char CONTENT_TYPE[] = "Content-Type";
+    static const size_t CONTENT_TYPE_LEN = MI_COUNT(CONTENT_TYPE) - 1;
+
+    static const char CONTENT_LENGTH[] = "Content-Length";
+    static const size_t CONTENT_LENGTH_LEN = MI_COUNT(CONTENT_LENGTH) - 1;
+
+    static const char OCTET_STREAM[] = "application/octet-stream";
+    static const size_t OCTET_STREAM_LEN = MI_COUNT(OCTET_STREAM) - 1;
+
+    static const char MULTIPART_ENCRYPTED[] = "multipart/encrypted";
+    static const size_t MULTIPART_ENCRYPTED_LEN = MI_COUNT(MULTIPART_ENCRYPTED) - 1;
+
+    const char *content_type = NULL;
+    const char *content_len_str = NULL;
+
+    if (!pHeaders)
+    {
+        trace_HTTP_CryptInvalidArg(__FUNCTION__, "pHeaders == NULL");
+        return FALSE;
+    }
+
+    int i = 0;
+    for (i = 0; i < pHeaders->sizeHeaders; i++ )
+    {
+        if (strncasecmp(pHeaders->headers[i].name, CONTENT_TYPE, CONTENT_TYPE_LEN) == 0)
+        {
+            content_type = pHeaders->headers[i].value;
+        }
+        else if (strncasecmp(pHeaders->headers[i].name, CONTENT_LENGTH, CONTENT_LENGTH_LEN) == 0)
+        {
+            content_len_str = pHeaders->headers[i].value;
+        }
+    }
+
+    if (!content_type)
+    {
+       // Not encrypted
+       //
+       LOGD2((ZT("HttpClient_DecryptData - No content type, not encrypted")));
+       return FALSE;
+    }
+
+    if (!(strncasecmp(content_type, MULTIPART_ENCRYPTED, MULTIPART_ENCRYPTED_LEN) == 0))
+    {
+        // Then its not encrypted. our job is done
+        LOGD2((ZT("HttpClient_DecryptData - content_type (%s) is %s, no decryption needed"), content_type, MULTIPART_ENCRYPTED));
+        return TRUE;
+    }
+
+    if (!handler->authContext)
+    {
+        trace_HTTP_CryptInvalidArg(__FUNCTION__, "context == NULL");
+        return FALSE;
+    }
+
+    if (!pData)
+    {
+        trace_HTTP_CryptInvalidArg(__FUNCTION__, "pdata == NULL");
+        return FALSE;
+    }
+
+    page = *pData;
+    input_buffer.length = page->u.s.size;
+    input_buffer.value = (void *)(page + 1);
+
+    scanp = (char *)(page + 1);
+    scanlimit = scanp + page->u.s.size;
+
+    while (!done)
+    {
+        if (scanp >= (scanlimit - 1))
+        {
+            // Not enough data to denote a new boundary (must start with '--'), break the loop.
+            break;
+        }
+
+        else if (scanp[0] == '-' && scanp[1] == '-')
+        {
+            // Start (or end) of a boundary segment
+            scanp += 2;
+
+            // PSRemoting to on-prem Exchange (hosted by IIS) sends a boundary of '-- EncryptedBoundary' which isn't
+            // technically to spec but still need to be handled.
+            while (scanp < scanlimit && isspace(*scanp)) scanp++;
+        }
+
+        else if (scanp < (scanlimit - ENCRYPTED_SEGMENT_LEN) &&
+                 Strncasecmp(scanp, ENCRYPTED_SEGMENT, ENCRYPTED_SEGMENT_LEN) == 0)
+        {
+            // Process the actual segment entries until the encrypted contents or new boundary was encountered.
+            scanp += ENCRYPTED_SEGMENT_LEN;
+
+            while (scanp < scanlimit && !done)
+            {
+                // Strip out the newline and tabs before reading the entry and get the end of the line.
+                while (scanp < scanlimit && (scanp[0] == '\r' || scanp[0] == '\n' || scanp[0] == '\t')) scanp++;
+
+                linep = scanp;
+                while (scanp < (scanlimit - 1) && !(scanp[0] == '\r' && scanp[1] == '\n')) scanp++;
+                linelimit = scanp;
+
+                if (linep < (linelimit - CONTENT_TYPE_LEN) && Strncasecmp(linep, CONTENT_TYPE, CONTENT_TYPE_LEN) == 0)
+                {
+                    // Content-Type: - can be the actual encrypted bytes or just the metadata.
+                    linep += CONTENT_TYPE_LEN + 1;
+                    while (linep < linelimit && isspace(*linep)) linep++;
+
+                    if (linep <= (linelimit - OCTET_STREAM_LEN) &&
+                        Strncasecmp(linep, OCTET_STREAM, OCTET_STREAM_LEN) == 0)
+                    {
+                        // This is the actual encrypted data
+                        sig_len = *(uint32_t *) (linelimit + 2);
+                        sig_len = ByteSwapToWindows32(sig_len);
+
+                        input_buffer.length = original_content_length + sig_len;
+                        input_buffer.value = linelimit + 2  // skip crlf
+                                                       + 4; // skip signature len
+
+                        done = TRUE;
+                        break;
+                    }
+
+                    else
+                    {
+                        // Assuming it is application/HTTP-{protocol}-session-encrypted, we don't actually care what
+                        // it is so just skip to the next line
+                    }
+                }
+
+                else if (linep <= (linelimit - ORIGINAL_CONTENT_LEN) &&
+                         Strncasecmp(linep, ORIGINAL_CONTENT, ORIGINAL_CONTENT_LEN) == 0)
+                {
+                    // OriginalContent: - Need to get the metadata of the plaintext message.
+                    linep += ORIGINAL_CONTENT_LEN + 1;
+
+                    do
+                    {
+                        while (linep < linelimit && (isspace(*linep) || linep[0] == ';')) linep++;
+
+                        entryp = linep;
+                        while (linep < linelimit && linep[0] != ';') linep++;
+                        entrylimit = linep;
+
+                        if (entryp <= (entrylimit - LENGTH_FIELD_LEN) &&
+                            Strncasecmp(entryp, LENGTH_FIELD, LENGTH_FIELD_LEN) == 0)
+                        {
+                            entryp += LENGTH_FIELD_LEN;
+                            original_content_length = atoi(entryp);
+                        }
+
+                        else if (entryp <= (entrylimit - TYPE_FIELD_LEN) &&
+                                 Strncasecmp(entryp, TYPE_FIELD, TYPE_FIELD_LEN) == 0)
+                        {
+                            entryp += TYPE_FIELD_LEN;
+                            original_content_type = entryp;
+                            memcpy(original_content_type_save, original_content_type, entrylimit - original_content_type);
+                            original_content_type = original_content_type_save;
+                        }
+
+                        else if (entryp <= (entrylimit - CHARSET_FIELD_LEN) &&
+                                 Strncasecmp(entryp, CHARSET_FIELD, CHARSET_FIELD_LEN) == 0)
+                        {
+                            entryp += CHARSET_FIELD_LEN;
+                            original_encoding = entryp;
+                            memcpy(original_encoding_save, original_encoding, entrylimit - original_encoding);
+                            original_encoding = original_encoding_save;
+                        }
+                    }
+                    while (linep < linelimit);
+                }
+
+                else if (linep < (linelimit - 1) && linep[0] == '-' && linep[1] == '-')
+                {
+                    // Start of a new boundary, break the current loop.
+                    scanp = linep;
+                    break;
+                }
+            }
+
+        }
+
+        else
+        {
+            // Unknown, just check the next char.
+            scanp++;
+        }
+    }
+
+    if (!done)
+    {
+        LOGD2((ZT("HttpClient_DecryptData - failed to extract encrypted content from HTTP packet")));
+        return FALSE;
+    }
+    // Alloc the new data page based on the original content size
+
+    maj_stat = (*_g_gssClientState.Gss_Unwrap)(&min_stat, (gss_ctx_id_t) handler->authContext, &input_buffer, &output_buffer, &flags, NULL);
+    if (GSS_S_COMPLETE != maj_stat)
+    {
+        _ReportError(handler, "gss_unwrap", maj_stat, min_stat);
+        return FALSE;
+    }
+    // Here is where we replace the pData page, replace the headers on content-type and content size
+
+    // We can just copy the data into the buffer directly, since the decrypted data is guaranteed
+    // to be smaller than the encrypted data plus header
+
+    page->u.s.size = output_buffer.length;
+    memcpy(page + 1, output_buffer.value, output_buffer.length);
+
+    char *buffer_p = (char *)(page + 1) + output_buffer.length;
+
+    // We know we have the additional room in the page because the string was in the page already
+    memcpy(buffer_p, original_content_type, strlen(original_content_type) + 1);
+    original_content_type = buffer_p;
+
+    buffer_p += strlen(original_content_type) + 1;  // Include the null
+    memcpy(buffer_p, original_encoding, strlen(original_encoding) + 1);
+
+    (*_g_gssClientState.Gss_Release_Buffer)(&min_stat, &output_buffer);
+
+    // In oroder for this to work, we must leave the original page allocated, and leave it to the
     // caller to free the original data and recvBuffer
 
     for (i = 0; i < pHeaders->sizeHeaders; i++ )
@@ -1328,7 +1628,7 @@ MI_Boolean HttpClient_DecryptData(_In_ HttpClient_SR_SocketData * handler, _Out_
 
 /*
  * Encrypts data in the data packet. Returns new header (with original content type and content length)
- * and the new data. releases the page. 
+ * and the new data. releases the page.
  */
 
 MI_Boolean
@@ -1445,7 +1745,7 @@ HttpClient_EncryptData(_In_ HttpClient_SR_SocketData * handler, _Out_ Page **pHe
     int out_flags;
     OM_uint32 signature_length = 16;  // NTLM_SIGNATURE_LENGTH
 
-    char *alloced_data = NULL;  // We will have a leak if we don't free the memory we alloc for the output buffer. 
+    char *alloced_data = NULL;  // We will have a leak if we don't free the memory we alloc for the output buffer.
 
     Page *pNewData = NULL;
     int orig_hdr_len = 0;
@@ -1461,7 +1761,7 @@ HttpClient_EncryptData(_In_ HttpClient_SR_SocketData * handler, _Out_ Page **pHe
     Page *pOriginalHeaderPage = *pHeader;
 
     size_t allocationSize = 0;
-#if GSS_USE_IOV 
+#if GSS_USE_IOV
 
     gss_iov_buffer_desc iov[4] = {{0}};
     int num_iov;
@@ -1505,14 +1805,14 @@ HttpClient_EncryptData(_In_ HttpClient_SR_SocketData * handler, _Out_ Page **pHe
             goto Error;
         }
         output_buffer.value = alloced_data;
-    
+
         char *outbufp = output_buffer.value;
         if (iov[0].buffer.length)
         {
             memcpy(outbufp, iov[0].buffer.value, iov[0].buffer.length);
             outbufp += iov[0].buffer.length;
         }
-    
+
         if (iov[1].buffer.length)
         {
             memcpy(outbufp, iov[1].buffer.value, iov[1].buffer.length);
@@ -1526,13 +1826,13 @@ HttpClient_EncryptData(_In_ HttpClient_SR_SocketData * handler, _Out_ Page **pHe
 
         (*_g_gssClientState.Gss_Release_Iov_Buffer)(&min_stat, iov, num_iov);
     }
-    else 
+    else
     {
         if (handler->selectedMech == AUTH_MECH_NTLMSSP)
         {
-            //  We are here because gss_wrap_iov is not implemented in gss-ntlmssp. 
+            //  We are here because gss_wrap_iov is not implemented in gss-ntlmssp.
             //  If we aren't doing NTLM I'm not sure how we would figure out the signature length
-            
+
              signature_length = 16;  // NTLM_SIGNATURE_LENGTH
         }
         maj_stat = (*_g_gssClientState.Gss_Wrap)(&min_stat, handler->authContext, (handler->negoFlags & GSS_C_CONF_FLAG),
@@ -1552,7 +1852,7 @@ HttpClient_EncryptData(_In_ HttpClient_SR_SocketData * handler, _Out_ Page **pHe
         goto Error;
     }
 
-#endif                                    
+#endif
 
     // clone the header
 
@@ -1573,7 +1873,7 @@ HttpClient_EncryptData(_In_ HttpClient_SR_SocketData * handler, _Out_ Page **pHe
     original_host_header = phdr;
     phdr = strchr(phdr, '\r');
     phdr+=2;
-    
+
     host_header_len = phdr-original_host_header;
 
     phdr = Strcasestr((char*)(*pHeader+1), "Content-Type:");
@@ -1639,7 +1939,7 @@ HttpClient_EncryptData(_In_ HttpClient_SR_SocketData * handler, _Out_ Page **pHe
     memcpy(pdst, MULTIPART_ENCRYPTED, MULTIPART_ENCRYPTED_LEN);
     pdst += MULTIPART_ENCRYPTED_LEN;
     memcpy(pdst, original_host_header, host_header_len);
-    pdst += host_header_len; 
+    pdst += host_header_len;
     *pdst++ = '\r';
     *pdst++ = '\n';
 
@@ -1758,9 +2058,9 @@ Error:
 }
 
 #endif
-/* 
- *  Based on the authorisation type, we create an auth clause for the Http response header. 
- *  The response token is converted to base 64.  
+/*
+ *  Based on the authorisation type, we create an auth clause for the Http response header.
+ *  The response token is converted to base 64.
  *
  *  An assumption is made that the protocol text values are single byte (UTF8).
  *
@@ -1856,21 +2156,21 @@ static int _getInputToken(_In_ struct _HttpClient_SR_SocketData * self,  const c
     case AUTH_METHOD_NEGOTIATE:
         auth += AUTHENTICATION_NEGOTIATE_LENGTH + 1;
         break;
-    
+
     case AUTH_METHOD_KERBEROS:
         auth += AUTHENTICATION_KERBEROS_LENGTH + 1;
         break;
-    
+
     default:
 
         // traceUnknownAuthType
         return -1;
     }
 
-    
+
     token_length = strlen(auth);
     if (token_length <= 0)
-    { 
+    {
        return -1;
     }
 
@@ -1894,9 +2194,9 @@ static int _getInputToken(_In_ struct _HttpClient_SR_SocketData * self,  const c
 
 #endif
 
-/* 
- *  Based on the authorisation type, we create an auth clause for the Http response header. 
- *  The response token is converted to base 64.  
+/*
+ *  Based on the authorisation type, we create an auth clause for the Http response header.
+ *  The response token is converted to base 64.
  *
  *  An assumption is made that the protocol text values are single byte (UTF8).
  *
@@ -1964,7 +2264,7 @@ static char *_BuildBasicAuthHeader(_In_ struct _HttpClient_SR_SocketData *self, 
     // Call again to copy the data
     if (Base64Enc
         (authUsernamePassword, authUsernamePasswordLength,
-         EncodePlaceCallback, &encode_context) == -1) 
+         EncodePlaceCallback, &encode_context) == -1)
     {
         PAL_Free(authUsernamePassword);
         PAL_Free(encode_context.pdata);
@@ -1983,9 +2283,9 @@ static char *_BuildBasicAuthHeader(_In_ struct _HttpClient_SR_SocketData *self, 
 
 
 /*
- * _WriteAuthRequest writes a reply to the server's reply to an auth request 
- * issued in HttpClient_RequestAuthorization. SPNEGO and kerberos may require 
- * a number of iterations of this, as many as five.  
+ * _WriteAuthRequest writes a reply to the server's reply to an auth request
+ * issued in HttpClient_RequestAuthorization. SPNEGO and kerberos may require
+ * a number of iterations of this, as many as five.
  *
  * Returns:
  *    TRUE  if the transfer completed
@@ -2042,7 +2342,7 @@ static MI_Boolean _WriteAuthRequest(HttpClient_SR_SocketData * handler, const ch
             {
 
              // These do not happen. We have already drained the socket
-             // before we got here. 
+             // before we got here.
 
             case SSL_ERROR_WANT_WRITE:
                 trace_SSLWrite_UnexpectedSysError(SSL_ERROR_WANT_WRITE);
@@ -2081,7 +2381,7 @@ static MI_Boolean _WriteAuthRequest(HttpClient_SR_SocketData * handler, const ch
 }
 
 /*
- *  Evaluates the response header returned by the server . 
+ *  Evaluates the response header returned by the server .
  *
  *  If the context is established returns complete, return no request header and PRT_CONTINUE
  *  If the context needs another round trip, return PRT_RETURN_TRUE and a request header for the return request
@@ -2100,20 +2400,20 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
 
     static const size_t POST_HEADER_LEN = MI_COUNT(POST_HEADER)-1;
 
-    
+    // JBOREAN CHANGE: The order here matters for Heimdal, we want to favour KRB5
     const gss_OID_desc mechset_avail_elems[] = {
         { 6, "\053\006\001\005\005\002" },                  // Spnego
-        { 10, "\x2b\x06\x01\x04\x01\x82\x37\x02\x02\x0a" }, // ntlm
-        { 9, "\052\206\110\206\367\022\001\002\002" }      // mech_krb5
+        { 9, "\052\206\110\206\367\022\001\002\002" },      // mech_krb5
+        { 10, "\x2b\x06\x01\x04\x01\x82\x37\x02\x02\x0a" }  // ntlm
     };
     const gss_OID_set_desc mechset_avail = { 3, (gss_OID) mechset_avail_elems };
-    
-    const gss_OID_desc mechset_krb5_elems[] = { 
+
+    const gss_OID_desc mechset_krb5_elems[] = {
         { 9, "\052\206\110\206\367\022\001\002\002" }      // mech_krb5
     };
-    
+
     const gss_OID_set_desc mechset_krb5 = { 1, (gss_OID) mechset_krb5_elems };
-    
+
     OM_uint32 maj_stat = 0;
     OM_uint32 min_stat = 0;
     gss_ctx_id_t context_hdl = GSS_C_NO_CONTEXT;
@@ -2127,7 +2427,7 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
         // complain here
 
         return PRT_RETURN_FALSE;
-    }    
+    }
 
     switch (self->authType)
     {
@@ -2135,24 +2435,24 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
     case AUTH_METHOD_NEGOTIATE:
         mechset = (gss_OID_set) & mechset_avail;
         break;
-    
+
     case AUTH_METHOD_KERBEROS:
         mechset = (gss_OID_set) & mechset_krb5;
         break;
-    
+
     default:
 
         // We shouldn't be here in basic auth
 
         return PRT_RETURN_FALSE;
     }
-    
+
     if (self->authContext)
     {
         context_hdl = (gss_ctx_id_t) self->authContext;
     }
-    // This is an auth in progress, generate new request 
-    
+    // This is an auth in progress, generate new request
+
     self->authorizing  = TRUE;
     self->isAuthorized = FALSE;
 
@@ -2166,25 +2466,55 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
 
     if (self->isPrivate)
     {
-        self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG);
-        if (self->authType == AUTH_METHOD_KERBEROS)
-        {
-            self->negoFlags |= (GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG);
-        }
+        // JBOREAN CHANGE: Added GSS_C_DELEG_POLICY_FLAG to get Kerberos delegation working if allowed by the KDC.
+        // Also always add the replay and mutual flag even when not using KERBEROS as Negotiate could use Kerberos.
+        self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG | GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG | GSS_C_DELEG_POLICY_FLAG);
     }
 
+    // JBOREAN CHANGE: Add hack for NTLM on macOS where the reported completion doesn't match the actual status.
+    MI_Boolean skip_step = FALSE;
+    MI_Boolean check_complete_output = FALSE;
+#if defined(is_macos)
+    // FIXME: This is a hack, in reality the client should send the output token even if the auth is complete but I am
+    // not able to figure out how to do that with the current workflow.
+
+    // When negotiating NTLM through SPNEGO, macOS will think the context is complete once it has generated the NTLM
+    // Authentication msg when in reality there is still one more token it needs to process. This will pretend the
+    // status returned was GSS_S_CONTINUE_NEEDED so the client continues to send the required final token. The server
+    // will still reply with one more token resulting in (GSS_S_BAD_STATUS) which we will ignore as it should have
+    // processed the token.
+    check_complete_output = TRUE;
+    skip_step = self->selectedMech != NULL;
+
+#endif
+
+    const gss_OID_desc mech_krb5   = { 9, "\052\206\110\206\367\022\001\002\002" };
+    const gss_OID_desc mech_ntlm   = {10, "\x2b\x06\x01\x04\x01\x82\x37\x02\x02\x0a" };
+
     // (void)DecodeToken(&input_token);
-    maj_stat = (*_g_gssClientState.Gss_Init_Sec_Context)(&min_stat, self->cred, &context_hdl, target_name, mechset->elements, self->negoFlags,   // flags
+    if (!skip_step)
+    {
+        maj_stat = (*_g_gssClientState.Gss_Init_Sec_Context)(&min_stat, self->cred, &context_hdl, target_name, mechset->elements, self->negoFlags,   // flags
                                     0,  // time_req,
                                     GSS_C_NO_CHANNEL_BINDINGS,  // input_chan_bindings,
                                     &input_token, &chosen_mech, /* mech type */
                                     &output_token, &self->negoFlags, NULL);   /* time_rec */
-    
+    }
+    else
+    {
+        check_complete_output = FALSE;
+        maj_stat = GSS_S_COMPLETE;
+        min_stat = 0;
+        chosen_mech = (gss_OID)&mech_ntlm;
+    }
+
+    if (check_complete_output && output_token.length > 0 && maj_stat == GSS_S_COMPLETE)
+    {
+        maj_stat = GSS_S_CONTINUE_NEEDED;
+    }
+
     if (chosen_mech)
     {
-        const gss_OID_desc mech_krb5   = { 9, "\052\206\110\206\367\022\001\002\002" };
-        const gss_OID_desc mech_ntlm   = {10, "\x2b\x06\x01\x04\x01\x82\x37\x02\x02\x0a" };
-
         if (Gss_Oid_Equal(chosen_mech, (gss_OID)&mech_krb5)) {
             self->selectedMech = AUTH_MECH_KERBEROS;
         }
@@ -2196,23 +2526,23 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
         {
             self->selectedMech = AUTH_MECH_UNSUPPORTED;
         }
-    }    
-    else 
+    }
+    else
     {
         self->selectedMech = AUTH_MECH_NONE;
     }
-    
+
     // self->negoFlags = ret_flags;
-    
+
     PAL_Free(input_token.value);
-    
+
     if (maj_stat == GSS_S_COMPLETE)
     {
 
-        // If the result is complete, then we are done and can 
+        // If the result is complete, then we are done and can
         // send whatever request is pending, if any
 
-  
+
         trace_HTTP_AuthComplete();
         self->encrypting   = (self->negoFlags & (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG)) == (GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG);       // All data transfered will be encrypted.
         self->readyToSend  = TRUE;
@@ -2229,7 +2559,7 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
 
         MI_Uint32 header_len = 0;
         char *auth_header = _BuildClientGssAuthHeader(self, &output_token, &header_len);
-    
+
         /* create header page */
 
         char *request_header = PAL_Malloc(POST_HEADER_LEN+header_len+5+strlen(self->hostHeader));
@@ -2252,14 +2582,14 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
 
         *pRequestHeader = request_header;
         *pRequestLen    = (requestp - request_header);
-    
+
         (void)(*_g_gssClientState.Gss_Release_Buffer)(&min_stat, &output_token);
-    
+
         return PRT_RETURN_TRUE;
     }
     else {
         _ReportError(self, "Access Denied", maj_stat, min_stat);
-    
+
         *pRequestHeader = NULL;
 
         return PRT_RETURN_FALSE;
@@ -2274,7 +2604,7 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
 static int
 _Krb5VerifyInitCreds(const char *principalName, const char *password)
 {
-#if !defined(macos)
+#if !defined(is_macos)
     krb5_error_code ret;
     krb5_creds creds;
     krb5_principal client_princ = NULL;
@@ -2311,24 +2641,24 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
 {
     char *rslt = NULL;
 
-    const gss_OID_desc mechset_krb5_elems[] = { 
+    const gss_OID_desc mechset_krb5_elems[] = {
         { 9, "\052\206\110\206\367\022\001\002\002" }      // mech_krb5
     };
 
     const gss_OID_set_desc mechset_krb5 = { 1, (gss_OID) mechset_krb5_elems };
 
-    // The list attached to the spnego token 
-
+    // The list attached to the spnego token
+    // JBOREAN CHANGE: The order here matters for Heimdal, we want to favour KRB5
     const gss_OID_desc mechset_avail_elems[] = {
         { 6, "\053\006\001\005\005\002" },                  // Spnego
-        { 10, "\x2b\x06\x01\x04\x01\x82\x37\x02\x02\x0a" }, // ntlm
-        { 9, "\052\206\110\206\367\022\001\002\002" }      // mech_krb5
+        { 9, "\052\206\110\206\367\022\001\002\002" },      // mech_krb5
+        { 10, "\x2b\x06\x01\x04\x01\x82\x37\x02\x02\x0a" }  // ntlm
     };
     const gss_OID_set_desc mechset_avail = { 3, (gss_OID) mechset_avail_elems };
 
     //static const char WSMAN_PROTOCOL[] = "WSMAN/";
 
-   
+
     OM_uint32 maj_stat, min_stat;
 
     // const char *protocol = WSMAN_PROTOCOL;
@@ -2343,9 +2673,9 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
 
     // Ensure the GSS lib is loaded
 
-    if (!Once_Invoke(&g_once_state, _GssClientInitLibrary, self)) 
+    if (!Once_Invoke(&g_once_state, _GssClientInitLibrary, self))
     {
-        // We have a problem. 
+        // We have a problem.
         trace_HTTP_LoadGssFailed("");
         return FALSE;
     }
@@ -2363,6 +2693,65 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
         self->authContext = NULL;
     }
 
+    // JBOREAN CHANGE: Tidy up a lot of duplicated code.
+    if (self->authType == AUTH_METHOD_NEGOTIATE_WITH_CREDS ||
+        self->authType == AUTH_METHOD_NEGOTIATE ||
+        self->authType == AUTH_METHOD_KERBEROS)
+    {
+        if (self->isPrivate)
+        {
+            // JBOREAN CHANGE: Added GSS_C_DELEG_POLICY_FLAG to get Kerberos delegation working if allowed by the KDC.
+            self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG | GSS_C_DELEG_POLICY_FLAG);
+        }
+        else
+        {
+            self->negoFlags = GSS_C_MUTUAL_FLAG;
+        }
+
+        if (self->authType == AUTH_METHOD_KERBEROS)
+        {
+            mechset = (gss_OID_set) & mechset_krb5;
+
+            // Check the username and password
+            if (self->username != NULL)
+            { int retval = 0;
+
+                char buffer[1024];
+                char *bufp = &buffer[0];
+
+                strcpy(bufp, self->username);
+                bufp += strlen(self->username);
+
+                if (self->user_domain)
+                {
+                    *bufp++ = '@';
+                    strcpy(bufp, self->user_domain);
+                    bufp += strlen(self->user_domain);
+                    *bufp = '\0';
+                }
+
+                retval = _Krb5VerifyInitCreds(buffer, self->password);
+                if (retval != 0 )
+                {
+#if !defined(is_macos)
+                    _ReportError(self, "Kerberos verify cred with password failed", GSS_S_NO_CRED, (OM_uint32)KRB5KRB_AP_ERR_BADMATCH );
+#endif
+                    return NULL;
+                }
+            }
+        }
+        else
+        {
+            mechset = (gss_OID_set) & mechset_avail;
+        }
+    }
+    else
+    {
+        trace_Wsman_UnsupportedAuthentication("Unknown");
+        return NULL;
+    }
+
+/* Original code
     switch (self->authType)
     {
     case AUTH_METHOD_NEGOTIATE_WITH_CREDS:
@@ -2373,7 +2762,7 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
         {
             self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG);
         }
-        else 
+        else
         {
             self->negoFlags = GSS_C_MUTUAL_FLAG;
         }
@@ -2386,7 +2775,7 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
         {
             self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG);
         }
-        else 
+        else
         {
             self->negoFlags = GSS_C_MUTUAL_FLAG;
         }
@@ -2410,7 +2799,7 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
             }
 
             retval = _Krb5VerifyInitCreds(buffer, self->password);
-            if (retval != 0 ) 
+            if (retval != 0 )
             {
 #if !defined(macos)
                 _ReportError(self, "Kerberos verify cred with password failed", GSS_S_NO_CRED, (OM_uint32)KRB5KRB_AP_ERR_BADMATCH );
@@ -2425,6 +2814,7 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
         trace_Wsman_UnsupportedAuthentication("Unknown");
         return NULL;
     }
+*/
 
     // Get a credential, either with the username/passwd
 
@@ -2469,7 +2859,7 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
             {
                 buf.value = self->password;
                 buf.length = self->passwordLen;
-    
+
                 maj_stat = (*_g_gssClientState.gssAcquireCredwithPassword )(
                                                           &min_stat,
                                                           gss_username,
@@ -2530,7 +2920,7 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
         (self->authType == AUTH_METHOD_NEGOTIATE_WITH_CREDS))
     {
 
-        // Add the list of available mechs to the credential 
+        // Add the list of available mechs to the credential
 
         if (_g_gssClientState.gssSetNegMechs)
         {
@@ -2554,11 +2944,42 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
     {   // Start with the fdqn
         gss_buffer_desc buff = { 0 };
 
+        // JBOREAN CHANGE: We should not be using DNS to canonicalize the hostname as it is considered insecure to
+        // rely on that. If canonicalisation is desired by the user then the krb5.conf should be configured to do that
+        // internally instead of here. What we do instead is just use the hostname defined in the WSMan request as the
+        // SPN target name. Also change the service portion of the name to be 'http@' as that's the format desired by
+        // GSS_C_NT_HOSTBASED_SERVICE. The original code also resulted in a seg fault if getaddrinfo couldn't resolve
+        // the host.
+        target_name_type =  _g_gssClientState.Gss_Nt_Service_Name;  // GSS_C_NT_HOSTBASED_SERVICE
+        char protocol[] = "http@";
+        int protocol_len = MI_COUNT(protocol)-1;
+
+        buff.length = protocol_len + strlen(self->hostname);
+        buff.value = PAL_Malloc(buff.length + 1);
+
+        char *bufp = (char*)buff.value;
+        memset(buff.value, 0, buff.length + 1);
+        memcpy(buff.value, protocol, protocol_len);
+        bufp += protocol_len;
+
+        memcpy(bufp, self->hostname, strlen(self->hostname));
+        bufp += strlen(self->hostname);
+        *bufp++ = '\0';
+
+        maj_stat = (*_g_gssClientState.Gss_Import_Name)(&min_stat, &buff, target_name_type, &target_name);
+        PAL_Free(buff.value);
+        if (maj_stat != GSS_S_COMPLETE)
+        {
+            _ReportError(self, "parsing name", maj_stat, min_stat);
+            goto Done;
+        }
+
+/* Original code
         struct addrinfo hints, *info;
         int gai_result;
 
         memset(&hints, 0, sizeof hints);
-        hints.ai_family = AF_UNSPEC;    /*either IPV4 or IPV6 */
+        hints.ai_family = AF_UNSPEC;    //either IPV4 or IPV6
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_flags = AI_CANONNAME;
 
@@ -2574,17 +2995,17 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
             buff.length = protocol_len + strlen(info->ai_canonname);
             buff.value = PAL_Malloc(buff.length + 1);
             char *bufp = (char*)buff.value;
-    
+
             memset(buff.value, 0, buff.length+1);
             memcpy(buff.value, protocol, protocol_len);
             bufp += protocol_len;
-    
+
             memcpy(bufp, info->ai_canonname, strlen(info->ai_canonname));
             bufp += strlen(info->ai_canonname);
             *bufp++ = '\0';
         }
 
-        ((MI_Char *) buff.value)[buff.length] = 0; 
+        ((MI_Char *) buff.value)[buff.length] = 0;
 
         // 2DO: If we dont have an fdqn we will use the addr
 
@@ -2596,14 +3017,16 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
             _ReportError(self, "parsing name", maj_stat, min_stat);
             goto Done;
         }
+*/
     }
 
     if (self->isPrivate)
     {
-        self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG);
+        // JBOREAN CHANGE: Added GSS_C_DELEG_POLICY_FLAG to get Kerberos delegation working if allowed by the KDC.
+        self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG | GSS_C_DELEG_POLICY_FLAG);
     }
 
-    maj_stat = (*_g_gssClientState.Gss_Init_Sec_Context)(&min_stat, cred, &context_hdl, target_name, mechset->elements, self->negoFlags, 
+    maj_stat = (*_g_gssClientState.Gss_Init_Sec_Context)(&min_stat, cred, &context_hdl, target_name, mechset->elements, self->negoFlags,
                                     0,  // time_req,
                                     GSS_C_NO_CHANNEL_BINDINGS,  // input_chan_bindings,
                                     GSS_C_NO_BUFFER, NULL, &output_token, &self->negoFlags, 0);   // time_req
@@ -2628,43 +3051,43 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
     else if (maj_stat == GSS_S_COMPLETE)
     {
         MI_Uint32 header_len = 0;
-        
+
         // Kerberos will be completed here, probably. But we need to build an auth header
         // for key exchange
 
         if (output_token.length > 0)
         {
-            // We need to build an auth header    
+            // We need to build an auth header
             rslt = _BuildClientGssAuthHeader(self, &output_token, &header_len);
-        }    
+        }
 
         // If the result is complete, then we are done and can
         // send whatever request is pending, if any
         *status = GSS_S_COMPLETE;
 
-        // If the result is complete, then we are done and can 
+        // If the result is complete, then we are done and can
         // send whatever request is pending, if any
 
         trace_HTTP_AuthComplete();
 
-        if ((self->authType == AUTH_METHOD_KERBEROS) && 
+        if ((self->authType == AUTH_METHOD_KERBEROS) &&
             ((self->negoFlags  & (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG)) == (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG)) &&
-            (!(self->negoFlags & GSS_C_PROT_READY_FLAG))) 
-        {    
+            (!(self->negoFlags & GSS_C_PROT_READY_FLAG)))
+        {
             // We may be in complete, but we are not ready to encrypt so we short cirtuit isAuthorised
             self->authContext = context_hdl;
             self->targetName = target_name;
             self->authorizing = TRUE;
             self->cred = (void *)cred;
         }
-        else 
-        {        
+        else
+        {
             self->encrypting   = (self->negoFlags & (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG)) == (GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG);       // All data transfered will be encrypted.
             self->readyToSend  = TRUE;
             self->authorizing  = FALSE;
             self->isAuthorized = TRUE;
             self->cred = (void *)cred;
-        }    
+        }
 
         // *pRequestHeader = NULL;
 
@@ -2691,7 +3114,7 @@ Http_CallbackResult HttpClient_RequestAuthorization(_In_ struct _HttpClient_SR_S
     // Create and send the auth header
     // The client side of the authorisation dance.
 
-    // We do the gss_init_sec_context, rinse and repeat 
+    // We do the gss_init_sec_context, rinse and repeat
 
     switch (handler->authType)
     {
@@ -2715,7 +3138,7 @@ Http_CallbackResult HttpClient_RequestAuthorization(_In_ struct _HttpClient_SR_S
     case AUTH_METHOD_NEGOTIATE_WITH_CREDS:
     case AUTH_METHOD_NEGOTIATE:
     case AUTH_METHOD_KERBEROS:
-        
+
         if (pAuthHeader)
         {
             *pAuthHeader = _BuildInitialGssAuthHeader(handler, &status);
@@ -2723,13 +3146,13 @@ Http_CallbackResult HttpClient_RequestAuthorization(_In_ struct _HttpClient_SR_S
             {
                 goto AuthFailed;
             }
-            else 
+            else
             {
                 if (handler->isAuthorized)
                 {
                     return PRT_RETURN_TRUE;
                 }
-            }                
+            }
         }
 
         return PRT_CONTINUE;
@@ -2748,12 +3171,12 @@ AuthFailed:
 
 /*
  *
- *   HttpClient_IsAuthorized 
+ *   HttpClient_IsAuthorized
  *
- *   Handles authentication replies from the server, after HttpClient_RequestAuthorization sends the initial 
+ *   Handles authentication replies from the server, after HttpClient_RequestAuthorization sends the initial
  *   request.
  *
- *   If a reply is needed, sends the reply on the same thread. 
+ *   If a reply is needed, sends the reply on the same thread.
  *
  *   Returns :
  *       PRT_CONTINUE     : Continue with the transaction
@@ -2796,8 +3219,8 @@ Http_CallbackResult HttpClient_IsAuthorized(_In_ struct _HttpClient_SR_SocketDat
     {
     case AUTH_METHOD_BASIC:
 
-        // If the auth failed, we get a list of available auth methods. They will show up as WWW-Authenticate 
-        // but no data after the method. We don't need to look at return header, though. We either 
+        // If the auth failed, we get a list of available auth methods. They will show up as WWW-Authenticate
+        // but no data after the method. We don't need to look at return header, though. We either
         // authenticated or not. Basic must be reauthenticated every request so there is no state
         // or reply. Encryption is not possible in basic auth
 
@@ -2809,7 +3232,7 @@ Http_CallbackResult HttpClient_IsAuthorized(_In_ struct _HttpClient_SR_SocketDat
         case HTTP_ERROR_CODE_NOT_SUPPORTED:
 
             // We authorise broken error codes because of the possibility of
-            // error content, eg post mortem dump info 
+            // error content, eg post mortem dump info
 
             self->authorizing = FALSE;
             self->isAuthorized = TRUE;
@@ -2826,12 +3249,12 @@ Http_CallbackResult HttpClient_IsAuthorized(_In_ struct _HttpClient_SR_SocketDat
                 self->isAuthorized = FALSE;
                 self->encrypting   = FALSE;
                 self->readyToSend  = FALSE;
-    
+
                 #define BASIC_AUTH_FAIL_MSG "Basic Authorization failed for user "
                 int msglen = MI_COUNT(BASIC_AUTH_FAIL_MSG)-1;
                 int username_len = strlen(self->username);
                 char *pmsg = NULL;
-    
+
                 if (username_len > USERNAME_LIMIT)
                 {
                     trace_Username_Error(username_len);
@@ -2843,7 +3266,7 @@ Http_CallbackResult HttpClient_IsAuthorized(_In_ struct _HttpClient_SR_SocketDat
                 client->probableCause->type = ERROR_ACCESS_DENIED;
                 client->probableCause->probable_cause_id = WSMAN_CIMERROR_PROBABLE_CAUSE_AUTHENTICATION_FAILURE;
                 client->probableCause->description       = (MI_Char *)(client->probableCause+1);
-                
+
                 self->errMsg = (char*)(client->probableCause+1);
                 pmsg = self->errMsg;
                 memcpy(pmsg, BASIC_AUTH_FAIL_MSG, msglen);
@@ -2851,7 +3274,7 @@ Http_CallbackResult HttpClient_IsAuthorized(_In_ struct _HttpClient_SR_SocketDat
                 memcpy(pmsg, self->username, username_len);
                 pmsg += username_len;
                 *pmsg++ ='\0';
-    
+
                 return PRT_RETURN_FALSE;
             }
         }
@@ -2877,7 +3300,7 @@ Http_CallbackResult HttpClient_IsAuthorized(_In_ struct _HttpClient_SR_SocketDat
             case HTTP_ERROR_CODE_INTERNAL_SERVER_ERROR:
             case HTTP_ERROR_CODE_NOT_SUPPORTED:
 
-                // We authorise broken error codes because of the possibility of 
+                // We authorise broken error codes because of the possibility of
                 // error content, eg post mortem dump info
 
                 self->readyToSend  = TRUE;
@@ -2922,7 +3345,7 @@ Http_CallbackResult HttpClient_IsAuthorized(_In_ struct _HttpClient_SR_SocketDat
                     self->base.mask &= ~SELECTOR_READ;
                     self->base.mask |= SELECTOR_WRITE;
                     self->recvingState = RECV_STATE_HEADER;
-                }     
+                }
                 return r;
 
             case PRT_RETURN_FALSE:
@@ -2937,28 +3360,28 @@ Http_CallbackResult HttpClient_IsAuthorized(_In_ struct _HttpClient_SR_SocketDat
                  {
                      self->base.mask |= SELECTOR_WRITE;
                      self->base.mask &= ~SELECTOR_READ;
-                 
+
                      self->sentSize = 0;
                      self->sendingState = RECV_STATE_HEADER;
-     
+
                      if (!_WriteAuthRequest(self, reply, reply_len))
                      {
                          trace_SendIN_IO_thread_HttpSocket_WriteFailed();
                      }
-     
+
                      // Force it into read state so we can get the next header
                      self->base.mask &= ~SELECTOR_WRITE;
                      self->base.mask |= SELECTOR_READ;
                      self->recvingState = RECV_STATE_HEADER;
-     
+
                      PAL_Free(reply);
                      reply = NULL;
                  }
                  else
-                 {    
+                 {
                      if (self->verb)
                      {
-                         self->sendHeader =  _CreateHttpHeader(self->verb, self->uri, self->contentType, NULL, self->hostHeader, 
+                         self->sendHeader =  _CreateHttpHeader(self->verb, self->uri, self->contentType, NULL, self->hostHeader,
                                                                NULL, NULL, self->data? self->data->u.s.size: 0);
                          self->sendPage   =  self->data;
 
@@ -2972,14 +3395,14 @@ Http_CallbackResult HttpClient_IsAuthorized(_In_ struct _HttpClient_SR_SocketDat
                          self->base.mask &= ~SELECTOR_READ;
                          self->base.mask |= SELECTOR_WRITE;
                          self->recvingState = RECV_STATE_HEADER;
-                     }     
+                     }
 
                  }
-                     
+
                 return r;
             default:
                 return PRT_RETURN_FALSE;
-            }    
+            }
 
             // unreachable     return r;
         }

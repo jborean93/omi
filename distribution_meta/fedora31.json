@@ -1,0 +1,26 @@
+{
+    "container_image": "fedora:31",
+    "package_manager": "dnf",
+    "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
+    "build_deps": [
+        "bind-utils",
+        "gcc",
+        "gcc-c++",
+        "krb5-devel",
+        "make",
+        "openssl",
+        "openssl-devel",
+        "pam-devel",
+        "redhat-lsb-core",
+        "rpm-build",
+        "rpm-devel",
+        "which"
+    ],
+    "test_deps": [
+        "gssntlmssp",
+        "krb5-devel",
+        "krb5-workstation",
+        "powershell",
+        "which"
+    ]
+}

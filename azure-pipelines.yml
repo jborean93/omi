@@ -1,0 +1,63 @@
+trigger:
+  branches:
+    include:
+    - main
+  paths:
+    exclude:
+    - CHANGELOG.md
+    - LICENSE
+    - README.md
+
+stages:
+- stage: Build
+  jobs:
+
+  - job: Linux
+    pool:
+      vmImage: ubuntu-18.04
+    strategy:
+      matrix:
+        CentOS7:
+          distribution: centos7
+        CentOS8:
+          distribution: centos8
+        Debian8:
+          distribution: debian8
+        Debian9:
+          distribution: debian9
+        Debian10:
+          distribution: debian10
+        Fedora31:
+          distribution: fedora31
+        Fedora32:
+          distribution: fedora32
+        Ubuntu16.04:
+          distribution: ubuntu16.04
+        Ubuntu18.04:
+          distribution: ubuntu18.04
+
+    steps:
+    - script: ./build.py $(distribution) --docker
+      env:
+        OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
+      displayName: Build
+
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: Unix/build-$(distribution)/lib/libmi.so
+        artifactName: $(distribution)-libmi
+
+  - job: macOS
+    pool:
+      vmImage: macOS-10.15
+
+    steps:
+    - script: ./build.py macOS
+      env:
+        OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
+      displayName: Build
+
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: Unix/build-macOS/lib/libmi.dylib
+        artifactName: macOS-libmi

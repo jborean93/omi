@@ -1,0 +1,20 @@
+{
+    "container_image": "debian:10",
+    "package_manager": "apt",
+    "microsoft_repo": "https://packages.microsoft.com/config/debian/10/packages-microsoft-prod.deb",
+    "build_deps": [
+        "g++",
+        "libkrb5-dev",
+        "libpam-dev",
+        "libssl-dev",
+        "lsb-release",
+        "make",
+        "openssl",
+        "pkg-config"
+    ],
+    "test_deps": [
+        "gss-ntlmssp",
+        "krb5-user",
+        "powershell"
+    ]
+}

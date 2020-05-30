@@ -87,7 +87,7 @@ opts=$*
 
 ##==============================================================================
 ##
-## Extract the --target=TARGET option up front (leave other options in 
+## Extract the --target=TARGET option up front (leave other options in
 ## localopts).
 ##
 ##==============================================================================
@@ -139,13 +139,13 @@ COMMANDS:
         Print architecture ID for this platform.
     compiler
         Print compiler ID for this platform.
-    cc                  
+    cc
         Print command name of C compiler.
-    cxx                 
+    cxx
         Print command name of C++ compiler.
     ar
         Print command name of archive command.
-    size 
+    size
         Print command name of size command.
     cflags [--debug --pic --errwarn --pal]
         Print C compiler flags.
@@ -312,7 +312,7 @@ case "$platform" in
         compiler_revision=`echo $compiler_version | awk -F'.' '{ print $3}'`
         ;;
     SUNOS_I86PC_SUNPRO|SUNOS_SPARC_SUNPRO)
-        compiler_version=`cc -V 2>&1  |  awk -F":" '{ print $2 }'  |  sed "s/.*${command} \([^ ]*\).*$/\1/"` 
+        compiler_version=`cc -V 2>&1  |  awk -F":" '{ print $2 }'  |  sed "s/.*${command} \([^ ]*\).*$/\1/"`
         compiler_major_version=`echo $compiler_version | awk -F'/' '{ print $1}'`
         compiler_minor_version=`echo $compiler_version | awk -F'/' '{ print $2}'`
         compiler_revision=`echo $compiler_version | awk -F'/' '{ print $3}'`
@@ -400,7 +400,7 @@ if [ "$arg1" = "hostname" ]; then
         exit 1
     fi
 
-    if [ "$os" = "DARWIN" ] ; then 
+    if [ "$os" = "DARWIN" ] ; then
         hostname -s
     else
         hostname
@@ -627,7 +627,7 @@ if [ "$arg1" = "cxx" ]; then
             echo CC
             ;;
         AIX_PPC_IBM)
-            echo xlC_r 
+            echo xlC_r
             ;;
         HPUX_IA64_HP|HPUX_PARISC_HP)
             echo aCC -AA
@@ -781,7 +781,7 @@ if [ "$arg1" = "cflags" -o "$arg1" = "cxxflags" ]; then
         LINUX_IX86_GNU|LINUX_X86_64_GNU|LINUX_PPC_GNU|MONTAVISTA_IX86_GNU|NETBSD_IX86_GNU|LINUX_ARM_GNU)
             if test $cxx_opt ; then
                 r="$r -std=gnu++98"
-            fi    
+            fi
 
             if test -z "$debug_opt"; then
                 if test -n "$size_opt"; then
@@ -798,6 +798,10 @@ if [ "$arg1" = "cflags" -o "$arg1" = "cxxflags" ]; then
             r="$r -fvisibility=hidden"
             r="$r -fno-strict-aliasing"
             r="$r -fstack-protector-all"
+            # JBOREAN CHANGE:
+            # Newer gcc versions set '-fno-common' which breaks the OMI build. We proactively set '-fcommon' to
+            # restore the older behaviour.
+            r="$r -fcommon"
             r="$r -D_GNU_SOURCE"
             r="$r -D_XOPEN_SOURCE=600"
             r="$r -DGSS_USE_IOV=1"
@@ -846,7 +850,7 @@ if [ "$arg1" = "cflags" -o "$arg1" = "cxxflags" ]; then
             ## specify target architecture.
             r="$r -xarch=generic"
 
-            ## hide all library symbols by default.            
+            ## hide all library symbols by default.
             r="$r -xldscope=hidden"
 
             ## Stack overflow checking
@@ -868,7 +872,7 @@ if [ "$arg1" = "cflags" -o "$arg1" = "cxxflags" ]; then
 
             ## suppress this warning message.
             test -n "$c_opt" && r="$r -erroff=E_WHITE_SPACE_IN_DIRECTIVE"
-            
+
             ;;
         AIX_PPC_IBM)
             test -n "$debug_opt" && r="$r -qcheck"
@@ -922,7 +926,10 @@ if [ "$arg1" = "cflags" -o "$arg1" = "cxxflags" ]; then
             test -n "$errwarn_opt" && r="$r -Werror"
             r="$r -Wall"
             r="$r -I/usr/local/include"
-            r="$r -Dmacos"
+            # JBOREAN CHANGE: Newer clang builds has macos as a builtin macos macro so use 'is_macos' to avoid a
+            # collision. Also use '-DHEIMDAL' as macOS uses Heimdal and needs to import the correct symbols.
+            r="$r -Dis_macos"
+            r="$r -DHEIMDAL"
             r="$r -fvisibility=hidden"
             r="$r -fstack-protector-all"
             r="$r -DGSS_USE_IOV=1"
@@ -1031,7 +1038,7 @@ if [ "$arg1" = "cshlibflags" -o "$arg1" = "cxxshlibflags" ]; then
             r="$r -mt"
             r="$r +Z -Dhpux"
             r="$r +W4232"
-            r="$r +W4275" 
+            r="$r +W4275"
             r="$r -D_XOPEN_SOURCE=600"
             r="$r -D__STDC_EXT__"
             r="$r -lc"
@@ -1141,7 +1148,7 @@ if [ "$arg1" = "cprogflags" -o "$arg1" = "cxxprogflags" ]; then
             r="$r -mt"
             r="$r +Z -Dhpux"
             r="$r +W4232"
-            r="$r +W4275" 
+            r="$r +W4275"
             r="$r -D_XOPEN_SOURCE=600"
             r="$r -D__STDC_EXT__"
             r="$r -lrt"
@@ -1752,7 +1759,7 @@ fi
 
 ##==============================================================================
 ##
-## 'faultinjection' command 
+## 'faultinjection' command
 ##     Whether fault injection is supported (1) or not (0)
 ##
 ##==============================================================================
@@ -1780,7 +1787,7 @@ fi
 
 ##==============================================================================
 ##
-## 'ntlm' command 
+## 'ntlm' command
 ##     Whether gss negotiated ntlm is supported (1) or not (0)
 ##
 ##==============================================================================
@@ -1798,10 +1805,10 @@ if [ "$arg1" = "ntlm" ]; then
             # supported!
             case "$distro" in
                 *edHat*)
-                    
+
                     distro_major_version=`echo $distro_version | awk -F'.' '{ print $1}'`
                     distro_minor_version=`echo $distro_version | awk -F'.' '{ print $2}'`
-                   
+
                     if [ "$distro_major_version" -gt "7" ] ; then
                        echo "1"
                     elif [ "$distro_major_version" -eq "7" ] ; then
@@ -1813,13 +1820,13 @@ if [ "$arg1" = "ntlm" ]; then
                     else
                        echo "0"
                     fi
-    
+
                     ;;
                 *entOS*)
-                    
+
                     distro_major_version=`echo $distro_version | awk -F'.' '{ print $1}'`
                     distro_minor_version=`echo $distro_version | awk -F'.' '{ print $2}'`
-                   
+
                     if [ "$distro_major_version" -gt "7" ] ; then
                        echo "1"
                     elif [ "$distro_major_version" -eq "7" ] ; then
@@ -1831,11 +1838,11 @@ if [ "$arg1" = "ntlm" ]; then
                     else
                        echo "0"
                     fi
-    
+
                     ;;
-    
+
                 *SUSE*)
-    
+
                     distro_major_version=`echo $distro_version | awk -F'.' '{ print $1}'`
                     distro_minor_version=`echo $distro_version | awk -F'.' '{ print $2}'`
                     if [ "$distro_major_version" -ge "12" ] ; then
@@ -1844,7 +1851,7 @@ if [ "$arg1" = "ntlm" ]; then
                        echo "0"
                     fi
                     ;;
-    
+
                 *ebian*)
                     distro_major_version=`echo $distro_version | awk -F'.' '{ print $1}'`
                     distro_minor_version=`echo $distro_version | awk -F'.' '{ print $2}'`
@@ -1854,7 +1861,7 @@ if [ "$arg1" = "ntlm" ]; then
                        echo "0"
                     fi
                     ;;
-    
+
                 *buntu*)
                     distro_major_version=`echo $distro_version | awk -F'.' '{ print $1}'`
                     distro_minor_version=`echo $distro_version | awk -F'.' '{ print $2}'`
@@ -1882,7 +1889,7 @@ fi
 
 ##==============================================================================
 ##
-## 'gssapi_ext' command 
+## 'gssapi_ext' command
 ##     Whether gss negotiated gssapi_ext is supported (1) or not (0)
 ##
 ##==============================================================================
@@ -1900,32 +1907,32 @@ if [ "$arg1" = "gssapi_ext" ]; then
             # supported!
             case "$distro" in
                 *edHat*)
-                    
+
                     distro_major_version=`echo $distro_version | awk -F'.' '{ print $1}'`
                     distro_minor_version=`echo $distro_version | awk -F'.' '{ print $2}'`
-                   
+
                     if [ "$distro_major_version" -gt "5" ] ; then
                        echo "1"
                     else
                        echo "0"
                     fi
-    
+
                     ;;
                 *entOS*)
-                    
+
                     distro_major_version=`echo $distro_version | awk -F'.' '{ print $1}'`
                     distro_minor_version=`echo $distro_version | awk -F'.' '{ print $2}'`
-                   
+
                     if [ "$distro_major_version" -gt "5" ] ; then
                        echo "1"
                     else
                        echo "0"
                     fi
-    
+
                     ;;
-    
+
                 *SUSE*)
-    
+
                     distro_major_version=`echo $distro_version | awk -F'.' '{ print $1}'`
                     distro_minor_version=`echo $distro_version | awk -F'.' '{ print $2}'`
                     if [ "$distro_major_version" -ge "13" ] ; then
@@ -1934,7 +1941,7 @@ if [ "$arg1" = "gssapi_ext" ]; then
                        echo "0"
                     fi
                     ;;
-    
+
                 *ebian*)
                     distro_major_version=`echo $distro_version | awk -F'.' '{ print $1}'`
                     distro_minor_version=`echo $distro_version | awk -F'.' '{ print $2}'`
@@ -1944,7 +1951,7 @@ if [ "$arg1" = "gssapi_ext" ]; then
                        echo "0"
                     fi
                     ;;
-    
+
                 *buntu*)
                     distro_major_version=`echo $distro_version | awk -F'.' '{ print $1}'`
                     distro_minor_version=`echo $distro_version | awk -F'.' '{ print $2}'`
@@ -1983,7 +1990,7 @@ fi
 
 ##==============================================================================
 ##
-## 'vsnprintf' command 
+## 'vsnprintf' command
 ##     Whether vsnprintf return -1 on NULL buffer or not
 ##
 ##==============================================================================

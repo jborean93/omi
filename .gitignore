@@ -17,3 +17,15 @@ nits.log
 /Unix/etc/ssl/certs/omi.pem
 /Unix/etc/ssl/certs/omi.der
 /Unix/etc/creds
+
+__pycache__/
+.idea/
+.vscode/
+*.pyc
+*.swp
+/build-*.sh
+/krb5.conf
+/test-*.sh
+/ci-*.zip
+/Unix/build-*
+/integration_environment/.vagrant
