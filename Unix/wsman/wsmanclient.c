@@ -168,11 +168,11 @@ static void HttpClientCallbackOnStatusFn2(
         {
             cause.type              = ERROR_WSMAN_OPERATION_TIMEDOUT,
             cause.probable_cause_id = WSMAN_CIMERROR_PROBABLE_CAUSE_TIMEOUT;
-            if (text) 
+            if (text)
             {
                 cause.description = text;
             }
-            else 
+            else
             {
                 cause.description = MI_T("Operation timed out");
             }
@@ -182,8 +182,8 @@ static void HttpClientCallbackOnStatusFn2(
 
     if (result != MI_RESULT_OK)
     {
-        // This function should be called once and only once during the 
-        // lifetime of this operation. The count will be incremented here and zeroed at the 
+        // This function should be called once and only once during the
+        // lifetime of this operation. The count will be incremented here and zeroed at the
         // completion of the op in order to be sure that happens
 
         DEBUG_ASSERT(Atomic_Inc(&self->postCount) == 1);
@@ -197,11 +197,11 @@ static void HttpClientCallbackOnStatusFn2(
         {
             cause.type = ERROR_INTERNAL_ERROR;
             cause.probable_cause_id = WSMAN_CIMERROR_PROBABLE_CAUSE_UNKNOWN;
-            if (text) 
+            if (text)
             {
                 cause.description = text;
             }
-            else 
+            else
             {
                 cause.description = MI_T("Unknown failure");
             }
@@ -299,7 +299,7 @@ static MI_Boolean ProcessNormalResponse(WsmanClient *self, Page **data)
 
     msg = PostInstanceMsg_New(0);
     msg->instance = NULL;
-    
+
     if ((WS_ParseSoapEnvelope(xml) != 0) ||
         xml->status)
     {
@@ -478,9 +478,9 @@ static MI_Boolean ProcessNormalResponse(WsmanClient *self, Page **data)
         retVal = MI_FALSE;
     }
 
- 
+
     /* NOTE: IF THIS IS THE LAST INSTANCE EVERYTHING GETS DELETED SO DON'T TOUCH
-     * self IN THIS CASE OR IT WILL CRASH. 
+     * self IN THIS CASE OR IT WILL CRASH.
      * All state management needs to be done before.
      */
 
@@ -641,7 +641,7 @@ static MI_Boolean HttpClientCallbackOnResponseFn(
 
         if (self->httpError == 302)
         {
-            /* Extract the LOCATION header and save it */           
+            /* Extract the LOCATION header and save it */
             for (headerIndex = 0; headerIndex != headers->sizeHeaders; headerIndex++)
             {
                 if (Strcasecmp(headers->headers[headerIndex].name, "location") == 0)
@@ -737,7 +737,7 @@ static void _WsmanClient_SendIn_IO_Thread(void *_self, Message* msg)
 
     (void)/*miresult =*/ WsmanClient_StartRequest(self, &page, &cause);
 
-    // We void the return value because it will be handled by http via 
+    // We void the return value because it will be handled by http via
     // HttpClient_CallbackOnStatusFn2
 }
 
@@ -1043,7 +1043,7 @@ void _WsmanClient_Ack( _In_ Strand* self_)
                 PostResult(self, self->sockState.text, self->sockState.result, &self->sockState.pcause);
                 return;
             }
-        
+
             req = PullReq_New(123456, WSMANFlag);
             if (!req)
             {
@@ -1110,7 +1110,7 @@ void _WsmanClient_Close( _In_ Strand* self_)
     WsmanClient* self = FromOffset( WsmanClient, strand, self_ );
 
     trace_ProtocolSocket_Close(
-        ENGINE_TYPE, 
+        ENGINE_TYPE,
         self->strand.info.thisClosedOther,
         &self->strand.info.interaction,
         self->strand.info.interaction.other );
@@ -1455,7 +1455,7 @@ MI_Result WsmanClient_Delete(WsmanClient *self)
 
 MI_Result WsmanClient_StartRequest(WsmanClient* self, Page** data, const Probable_Cause_Data **cause )
 {
-    (void)Atomic_And(&self->postCount, 0); 
+    (void)Atomic_And(&self->postCount, 0);
     return HttpClient_StartRequestV2(self->httpClient, "POST", self->httpUrl, self->contentType, NULL, NULL, data, cause);
 }
 
