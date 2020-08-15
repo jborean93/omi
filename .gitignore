@@ -17,3 +17,5 @@ nits.log
 /Unix/etc/ssl/certs/omi.pem
 /Unix/etc/ssl/certs/omi.der
 /Unix/etc/creds
+
+.vscode/

@@ -2141,7 +2141,7 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
 
     if (self->isPrivate)
     {
-        self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG);
+        self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG | GSS_C_DELEG_POLICY_FLAG);
         if (self->authType == AUTH_METHOD_KERBEROS)
         {
             self->negoFlags |= (GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG);
@@ -2188,33 +2188,6 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
     {
         maj_stat = GSS_S_CONTINUE_NEEDED;
     }
-
-/*
-#if defined(is_macos)
-    if (maj_stat == GSS_S_COMPLETE && output_token.length > 0)
-    {
-        maj_stat = GSS_S_CONTINUE_NEEDED;
-    }
-    else if (maj_stat == GSS_S_BAD_STATUS)
-    {
-        maj_stat = GSS_S_COMPLETE;
-
-        // The negoFlags and chosen_mech will be reset so we just use ignore what came out of gss_init_sec_context.
-
-        switch (self->selectedMech)
-        {
-        case AUTH_MECH_KERBEROS:
-            chosen_mech = (gss_OID)&mech_krb5;
-            break;
-        case AUTH_MECH_NTLMSSP:
-            chosen_mech = (gss_OID)&mech_ntlm;
-            break;
-        default:
-            break;
-        }
-    }
-#endif
-*/
 
     if (chosen_mech)
     {
@@ -2404,7 +2377,7 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
         target_name_type =  _g_gssClientState.Gss_Nt_Service_Name;
         if (self->isPrivate)
         {
-            self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG);
+            self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG | GSS_C_DELEG_POLICY_FLAG);
         }
         else
         {
@@ -2417,7 +2390,7 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
         target_name_type = _g_gssClientState.Gss_Nt_Service_Name;
         if (self->isPrivate)
         {
-            self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG);
+            self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG | GSS_C_DELEG_POLICY_FLAG);
         }
         else
         {
@@ -2645,7 +2618,7 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
 
     if (self->isPrivate)
     {
-        self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG);
+        self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG | GSS_C_DELEG_POLICY_FLAG);
     }
 
     maj_stat = (*_g_gssClientState.Gss_Init_Sec_Context)(&min_stat, cred, &context_hdl, target_name, mechset->elements, self->negoFlags,
