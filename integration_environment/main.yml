@@ -1,0 +1,221 @@
+# Setups up a domain controller and test Debian host for testing distros in a docker container
+# Can be run with `-e build_id={num}' to download the prebuilt libmi.so from a CI run
+# Supports the following tags:
+#   windows: Sets up the domain controller only
+#   linux: Sets up the Debian host
+#   build_artifacts: Downloads the libmi from Azure DevOps run (requires '-e build_id' to be set)
+
+- name: setup domain controller
+  hosts: windows
+  gather_facts: no
+  tags:
+  - windows
+  tasks:
+  - name: get network connection for private adapter
+    win_shell: |
+      foreach ($instance in (Get-CimInstance -ClassName Win32_NetworkAdapter -Filter "Netenabled='True'")) {
+          $instance_config = Get-CimInstance -ClassName WIn32_NetworkAdapterConfiguration -Filter "Index = '$($instance.Index)'"
+          if ($instance_config.IPAddress -contains "{{ ansible_host }}") {
+              $instance.NetConnectionID
+          }
+      }
+    changed_when: no
+    register: network_connection_name_raw
+
+  - name: fail if we didn't get a network connection name
+    fail:
+      msg: Failed to get the Windows network connection name
+    when: network_connection_name_raw.stdout_lines | count != 1
+
+  - name: set fact of network connection name
+    set_fact:
+      network_connection_name: '{{ network_connection_name_raw.stdout | trim }}'
+
+  - name: set the DNS for the specified adapter to localhost
+    win_dns_client:
+      adapter_name: '{{ network_connection_name }}'
+      ipv4_addresses: 127.0.0.1
+
+  - name: ensure domain exists and DC is promoted as a domain controller
+    win_domain:
+      dns_domain_name: '{{ domain_name }}'
+      safe_mode_password: '{{ domain_password }}'
+    register: domain_setup_res
+
+  - name: reboot DC if required after install
+    win_reboot:
+    when: domain_setup_res.reboot_required
+
+  - name: create domain username
+    win_domain_user:
+      name: '{{ domain_username }}'
+      upn: '{{ domain_upn }}'
+      description: '{{ domain_username }} Domain Account'
+      password: '{{ domain_password }}'
+      password_never_expires: yes
+      update_password: on_create
+      groups:
+      - Domain Admins
+      state: present
+    register: domain_user_result
+    # ADWS may not be online after first reboot, need to keep on retrying
+    retries: 30
+    delay: 15
+    until: domain_user_result is successful
+
+  - name: test out domain user that was created
+    win_whoami:
+    register: become_res
+    failed_when: become_res.upn != domain_upn
+    become: yes
+    become_method: runas
+    vars:
+      ansible_become_user: '{{ domain_upn }}'
+      ansible_become_pass: '{{ domain_password }}'
+
+- name: set up Linux test host
+  hosts: linux
+  gather_facts: no
+  become: yes
+  tags:
+  - linux
+  tasks:
+  - name: update the apt package index
+    apt:
+      name: "*"
+      state: latest
+      update_cache: yes
+      force_apt_get: yes
+
+  - name: install base packages for Docker
+    apt:
+      name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - git
+      - gnupg2
+      - software-properties-common
+      - unzip
+      - wget
+      force_apt_get: yes
+      state: latest
+      update_cache: yes
+
+  - name: add Apt signing key from official docker repo
+    apt_key:
+      url: https://download.docker.com/linux/debian/gpg
+      state: present
+
+  - name: get the lsb_release for the current host
+    command: lsb_release -cs
+    register: lsb_release
+    changed_when: no
+
+  - name: add docker official repository for Debian
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/debian {{ lsb_release.stdout | trim }} stable
+      state: present
+
+  - name: index new repo into the cache
+    apt:
+      name: "*"
+      state: latest
+      update_cache: yes
+      force_apt_get: yes
+
+  - name: install docker
+    apt:
+      name: docker-ce
+      state: present
+
+  - name: configure the Docker service to start on boot
+    service:
+      name: docker
+      enabled: yes
+      state: started
+
+  - name: add user to docker group
+    user:
+      name: vagrant
+      append: yes
+      groups: docker
+      state: present
+
+  - name: ensure the Windows domain controller is resolvable
+    lineinfile:
+      path: /etc/hosts
+      line: '{{ hostvars["DC01"]["ansible_host"] }} dc01 dc01.{{ domain_name }}'
+      state: present
+
+  - name: Add DNS entries for resolvconf
+    lineinfile:
+      path: /etc/resolvconf/resolv.conf.d/head
+      line: nameserver {{ item }}
+      state: present
+    loop:
+    - '{{ hostvars["DC01"]["ansible_host"] }}'
+    - 8.8.8.8
+    register: dns_domain
+
+  - name: resync resolvconf
+    command: resolvconf -u
+    when: dns_domain is changed
+
+  - name: synchronize local omi to Debian host
+    synchronize:
+      src: ../../
+      dest: ~/omi
+      rsync_opts:
+      - --exclude=.git
+      - --exclude=integration_environment/.vagrant
+    become: no
+
+  - name: template krb5.conf template for tests
+    template:
+      src: krb5.conf.tmpl
+      dest: ~/omi/krb5.conf
+    become: no
+
+  - name: download Azure DevOps build artifacts
+    when: build_id is defined
+    tags:
+    - build_artifacts
+    block:
+    - name: get download info for Azure DevOps build artifacts
+      uri:
+        url: https://dev.azure.com/jborean93/jborean93/_apis/build/builds/{{ build_id }}/artifacts?api-version=4.1
+        return_content: yes
+      register: azure_artifacts
+
+    - name: process artifact download info
+      set_fact:
+        artifact_details: >-
+          {{
+              artifact_details | default([]) + [{
+                  "distribution": azure_artifacts.json.value[item | int].name.split('-')[0],
+                  "url": azure_artifacts.json.value[item | int].resource.downloadUrl
+              }]
+          }}
+      with_sequence: start=0 end={{ (azure_artifacts.json.count | int) - 1 }}
+      loop_control:
+        label: '{{ azure_artifacts.json.value[item | int].name }}'
+
+    - name: download artifact zip
+      get_url:
+        url: '{{ item.url }}'
+        dest: ~/omi/ci-{{ item.distribution }}.zip
+      become: no
+      loop: '{{ artifact_details }}'
+
+    - name: make sure the lib directory exists
+      file:
+        path: ~/omi/Unix/build-{{ item.distribution }}/lib
+        state: directory
+      become: no
+      loop: '{{ artifact_details }}'
+
+    - name: extract .so from zip
+      command: unzip -oj ~/omi/ci-{{ item.distribution }}.zip {{ item.distribution }}-libmi/libmi.* -d ~/omi/Unix/build-{{ item.distribution }}/lib
+      become: no
+      loop: '{{ artifact_details }}'

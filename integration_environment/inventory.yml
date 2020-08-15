@@ -1,0 +1,28 @@
+all:
+  children:
+    windows:
+      hosts:
+        DC01:
+          ansible_host: 192.168.65.10
+          vagrant_box: jborean93/WindowsServer2019
+      vars:
+        ansible_connection: winrm
+        ansible_winrm_transport: ntlm
+        ansible_port: 5985
+
+    linux:
+      hosts:
+        DEBIAN10:
+          ansible_host: 192.168.65.11
+          vagrant_box: generic/debian10
+      vars:
+        ansible_ssh_common_args: -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no
+
+  vars:
+    ansible_user: vagrant
+    ansible_password: vagrant
+
+    domain_name: omi.test
+    domain_username: omi
+    domain_password: Password01
+    domain_upn: '{{ domain_username }}@{{ domain_name | upper }}'

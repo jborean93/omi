@@ -1,0 +1,59 @@
+- name: run integration tests
+  hosts: linux
+  gather_facts: no
+  become: no
+
+  tasks:
+  - name: ensure the testing files are the latest available
+    copy:
+      src: '{{ item }}'
+      dest: ~/omi/{{ item | basename }}
+    loop:
+    - ../libmi.tests.ps1
+    - ../test.py
+    - ../utils.py
+
+  - name: get a list of distributions to test with
+    find:
+      paths: ~/omi/distribution_meta
+      recurse: no
+      patterns: '*.json'
+    register: distribution_raw
+
+  - name: process distribution list
+    set_fact:
+      available_distributions: >-
+        {{
+            available_distributions | default([]) + [
+                (item.path | basename | splitext)[0]
+            ]
+        }}
+    when: (item.path | basename | splitext)[0] != 'macOS'
+    loop: '{{ distribution_raw.files }}'
+
+  - name: get a list of the final distributions to run
+    set_fact:
+      selected_distributions: '{{ distribution | default(available_distributions) | str_to_list | sort }}'
+
+  - name: verify the distributions selected are valid
+    assert:
+      that:
+      - item in available_distributions
+      msg: The selected distribution {{ item }} is not valid
+    loop: '{{ selected_distributions }}'
+
+  - name: kick off integration tests
+    command: ~/omi/test.py {{ item | trim }} --docker
+    loop: '{{ selected_distributions }}'
+    async: 600
+    poll: 0
+    register: async_job
+
+  - name: wait for integration tests to finish
+    async_status:
+      jid: '{{ item.ansible_job_id }}'
+    loop: '{{ async_job.results }}'
+    register: job_result
+    until: job_result is finished
+    delay: 5
+    retries: 120

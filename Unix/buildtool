@@ -798,6 +798,10 @@ if [ "$arg1" = "cflags" -o "$arg1" = "cxxflags" ]; then
             r="$r -fvisibility=hidden"
             r="$r -fno-strict-aliasing"
             r="$r -fstack-protector-all"
+            # JBOREAN CHANGE:
+            # Newer gcc versions set '-fno-common' which breaks the OMI build. We proactively set '-fcommon' to
+            # restore the older behaviour.
+            r="$r -fcommon"
             r="$r -D_GNU_SOURCE"
             r="$r -D_XOPEN_SOURCE=600"
             r="$r -DGSS_USE_IOV=1"
@@ -922,6 +926,8 @@ if [ "$arg1" = "cflags" -o "$arg1" = "cxxflags" ]; then
             test -n "$errwarn_opt" && r="$r -Werror"
             r="$r -Wall"
             r="$r -I/usr/local/include"
+            # JBOREAN CHANGE: Newer clang builds has macos as a builtin macos macro so use 'is_macos' to avoid a
+            # collision. Also use '-DHEIMDAL' as macOS uses Heimdal and needs to import the correct symbols.
             r="$r -Dis_macos"
             r="$r -DHEIMDAL"
             r="$r -fvisibility=hidden"

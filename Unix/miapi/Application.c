@@ -303,6 +303,28 @@ MI_LINKAGE MI_Result MI_MAIN_CALL MI_Application_InitializeV1(
     return MI_RESULT_OK;
 }
 
+// JBOREAN CHANGE: Used for debugging the library version, don't shame for for my crappy C skills
+/*=============================================================================================
+ * PUBLIC: Returns the library version for debugging
+ *=============================================================================================
+ */
+
+typedef struct _PWSH_OMI_Version
+{
+    MI_Uint32 Major;
+    MI_Uint32 Minor;
+    MI_Uint32 Revision;
+    MI_Uint32 PatchLevel;
+} PWSH_OMI_Version;
+
+MI_LINKAGE void MI_MAIN_CALL MI_Version_Info(PWSH_OMI_Version *version)
+{
+    version->Major = MI_MAJOR;
+    version->Minor = MI_MINOR;
+    version->Revision = MI_REVISION;
+    version->PatchLevel = MI_PATCH_LEVEL;
+}
+
 MI_Result Application_RegisterSession(
     _Inout_ MI_Application *application,
     _Inout_ ChildListNode *session)
@@ -779,9 +801,9 @@ MI_Result MI_CALL Serializer_Create(
 
 /* Wrapper function to dispatch proper deserializer codec */
 MI_Result MI_CALL Deserializer_Create(
-    _In_ MI_Application *application, 
+    _In_ MI_Application *application,
     MI_Uint32 flags,
-    _In_z_ MI_Char *format, 
+    _In_z_ MI_Char *format,
     _Out_ MI_Deserializer *deserializer)
 {
     if ((application == NULL) || (flags != 0) || (format == NULL) || (deserializer == NULL))

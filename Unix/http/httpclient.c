@@ -912,6 +912,8 @@ static Http_CallbackResult _ReadData(
         {
             // Failed decrypt. No encryption counts as success. So this is an error in the decrpytion, probably
             // bad credential
+            // JBOREAN CHANGE: Better logging on message handling failures
+            LOGD2((ZT("_ReadData - HttpClient_DecryptData failure")));
 
             handler->recvPage = 0;
             handler->receivedSize = 0;
@@ -921,6 +923,9 @@ static Http_CallbackResult _ReadData(
         }
         else
         {
+            // JBOREAN CHANGE: Better logging on message handling failures
+            LOGD2((ZT("_ReadData - HttpClient_DecryptData success")));
+
             if (FORCE_TRACING || handler->enableTracing)
             {
                 char after_decrypt[] = "\n------------ After Decryption ---------------\n";

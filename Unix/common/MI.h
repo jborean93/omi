@@ -111,6 +111,11 @@
 #endif
 #endif
 
+// JBOREAN CHANGE: Added patch level
+#ifndef MI_PATCH_LEVEL
+#define MI_PATCH_LEVEL ((MI_Uint32)0)
+#endif
+
 #define MI_MAKE_VERSION(MAJ, MIN, REV) ((MAJ << 16) | (MIN << 8) | REV)
 #define MI_VERSION MI_MAKE_VERSION(MI_MAJOR, MI_MINOR, MI_REVISION)
 
