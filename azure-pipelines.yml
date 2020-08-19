@@ -37,6 +37,29 @@ stages:
           distribution: ubuntu18.04
 
     steps:
+    - script: |
+        echo "'$(Build.Reason)'"
+        echo "'$(Build.SourceBranch)'"
+        echo "'$(Build.SourceVersionMessage)'"
+
+    - script: echo hi
+      condition: eq(variables['Build.Reason'], 'IndividualCI')
+
+    - script: echo hi
+      condition: eq(variables['Build.SourceBranch'], 'refs/heads/main')
+
+    - script: echo hi
+      condition: startsWith(variables['Build.SourceVersionMessage'], 'release ')
+
+    - script: echo hi
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['Build.Reason'], 'IndividualCI'),
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+          startsWith(variables['Build.SourceVersionMessage'], 'release ')
+        )
+
     - script: ./build.py $(distribution) --docker
       env:
         OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
@@ -61,3 +84,43 @@ stages:
       inputs:
         targetPath: Unix/build-macOS/lib/libmi.dylib
         artifactName: macOS-libmi
+
+- stage: Publish
+  jobs:
+  - job: Publish
+    pool:
+      vmImage: ubuntu-18.04
+
+    steps:
+    - script: |
+        RELEASE_TAG="$( ./release.py --print-tag )"
+        echo "Derived release tag is ${RELEASE_TAG}"
+        echo "##vso[task.setvariable variable=ReleaseTag]${RELEASE_TAG}"
+      displayName: Generate the tag number from omi.version
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        source: current
+        path: $(Build.ArtifactStagingDirectory)
+
+    - script: ./release.py --pipeline-artifacts "$(Build.ArtifactStagingDirectory)"
+      displayName: Rename the published artifacts for the GitHub release assets
+
+    - task: GitHubRelease@0
+      inputs:
+        gitHubConnection: GitHub Release
+        repositoryName: $(Build.Repository.Name)
+        action: create
+        target: $(Build.SourceVersion)
+        tagSource: manual
+        tag: $(ReleaseTag)
+        assets: $(Build.ArtifactStagingDirectory)/*
+        addChangeLog: true
+        compareWith: lastFullRelease
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['Build.Reason'], 'IndividualCI'),
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+          startsWith(variables['Build.SourceVersionMessage'], 'release ')
+        )

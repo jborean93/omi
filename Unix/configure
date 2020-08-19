@@ -40,7 +40,7 @@ if [ -n "$OMI_BUILDVERSION_MAJOR" -a -n "$OMI_BUILDVERSION_MINOR" -a -n "$OMI_BU
     minor=$OMI_BUILDVERSION_MINOR
     revision=$OMI_BUILDVERSION_PATCH
 else
-    echo "*** UNABLE TO LOCATE FILE omi.version; USING VERSION 0.0.0.0 ***" >& 2
+    echo "*** UNABLE TO LOCATE FILE omi.version; USING VERSION 0.0.0 ***" >& 2
 
     major=0
     minor=0
@@ -51,6 +51,7 @@ patch_level=${OMI_BUILDVERSION_BUILDNR:-0}
 
 version="$major.$minor.$revision"
 version_with_release="$major.$minor.$revision-$patch_level"
+echo "*** RELEASE: ${version_with_release} ***"
 date=`date`
 
 ##==============================================================================
