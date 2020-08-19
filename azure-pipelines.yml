@@ -37,29 +37,6 @@ stages:
           distribution: ubuntu18.04
 
     steps:
-    - script: |
-        echo "'$(Build.Reason)'"
-        echo "'$(Build.SourceBranch)'"
-        echo "'$(Build.SourceVersionMessage)'"
-
-    - script: echo hi
-      condition: eq(variables['Build.Reason'], 'IndividualCI')
-
-    - script: echo hi
-      condition: eq(variables['Build.SourceBranch'], 'refs/heads/main')
-
-    - script: echo hi
-      condition: startsWith(variables['Build.SourceVersionMessage'], 'release ')
-
-    - script: echo hi
-      condition: >-
-        and(
-          succeeded(),
-          eq(variables['Build.Reason'], 'IndividualCI'),
-          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
-          startsWith(variables['Build.SourceVersionMessage'], 'release ')
-        )
-
     - script: ./build.py $(distribution) --docker
       env:
         OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
