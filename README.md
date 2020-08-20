@@ -30,6 +30,9 @@ The following changes have been made:
   + Also works against an on-prem Exchange remoting endpoint due to the unique nature of how that encrypted the message
 + Added additional log entries to make debugging slightly easier than before
   + See [logging](#logging) for more details
++ Increased the password length limit to 8KiB to support modern authentication required by O365 WSMan connections
+  + The original limit was 1KiB and I've seen JWT tokens that modern auth in O365 exceed 1.5KiB
+  + I've set it to 8KiB as that seems to be a common default of HTTP header sizes, if it does exceed that then the server would return a 413 anyway
 
 I am not looking at fixing any underlying problems in this library or work on the server side part of OMI.
 This is purely focusing on improving the experience when using WinRM as a client on non-Windows based hosts within PowerShell.

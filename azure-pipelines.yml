@@ -42,6 +42,20 @@ stages:
         OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
       displayName: Build
 
+    - pwsh: |
+        $version = tools/Get-OmiVersion -Path Unix/build-$(distribution)/lib/libmi.so
+
+        # Get the actual version from the release tag (v{major}.{minor}.{build}-pwsh)
+        $expectedTag = ./release.py --print-tag
+        $expectedVersion = [Version]($expectedTag.Substring(1, $expectedTag.Length - 6) + ".$(Build.BuildId)")
+
+        if ($version -ne $expectedVersion) {
+            throw "Actual version ($version) != expected version ($expectedVersion)"
+        }
+      errorActionPreference: Stop
+      displayName: Make sure the output library can be loaded in PowerShell and returns the version.
+      condition: ne(variables['distribution'], 'centos7')  # Bug on Centos7 causes a failure, need to investigate more later
+
     - task: PublishPipelineArtifact@1
       inputs:
         targetPath: Unix/build-$(distribution)/lib/libmi.so
@@ -56,6 +70,19 @@ stages:
       env:
         OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
       displayName: Build
+
+    - pwsh: |
+        $version = tools/Get-OmiVersion -Path Unix/build-macOS/lib/libmi.dylib
+
+        # Get the actual version from the release tag (v{major}.{minor}.{build}-pwsh)
+        $expectedTag = ./release.py --print-tag
+        $expectedVersion = [Version]($expectedTag.Substring(1, $expectedTag.Length - 6) + ".$(Build.BuildId)")
+
+        if ($version -ne $expectedVersion) {
+            throw "Actual version ($version) != expected version ($expectedVersion)"
+        }
+      errorActionPreference: Stop
+      displayName: Make sure the output library can be loaded in PowerShell and returns the version.
 
     - task: PublishPipelineArtifact@1
       inputs:

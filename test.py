@@ -59,6 +59,7 @@ def main():
 
 Install-Module -Name Pester -MinimumVersion 5.0 -Force
 Install-Module -Name powershell-yaml -Force
+Install-Module -Name MSAL.PS -Force -AcceptLicense
 EOL
 pwsh -NoProfile -NoLogo -File /tmp/pwsh-requirements.ps1'''
         script_steps.append(('Installing Pester 5+ and other PowerShell deps', pwsh_deps))

@@ -121,7 +121,9 @@ typedef enum _AuthMechanism {
 */
 #define HTTP_ALLOCATION_LIMIT 10000000
 #define USERNAME_LIMIT 1024
-#define PASSWORD_LIMIT 1024
+
+// JBOREAN CHANGE: Exchange Online JWT tokens can exceed 1024 bytes in length, increase the limit to 8KiB
+#define PASSWORD_LIMIT 8192
 
 /* ************************************************ */
 /*                  Datatypes                       */
@@ -130,7 +132,7 @@ typedef struct _Http Http;
 
 /* HTTP options.
     mostly used for unit-testing; default values
-    are hard-coded but can be overwritten by 
+    are hard-coded but can be overwritten by
     unit-tests/config modules   */
 typedef struct _HttpOptions
 {
@@ -191,7 +193,7 @@ MI_Boolean ParseAuthorization(
 void ParseContentType(
     _Inout_     HttpHeaders*    recvHeaders,
     _In_        CharPtr         value );
-    
+
 #ifdef CONFIG_POSIX
 
 MI_Result CreateSSLContext(SSL_CTX **sslContext, SSL_Options sslOptions);
