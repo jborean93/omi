@@ -5,7 +5,8 @@ It documents the changes in each of the tagged releases
 
 ## 1.0.1 - TBD
 
-* Increased password length limit to allow connecting with JWT tokens to Exchange Online that routinely exceed 1KiB in size.
++ Increased password length limit to allow connecting with JWT tokens to Exchange Online that routinely exceed 1KiB in size.
++ Take back point about NTLM working on macOS, while it can work when you use HTTPS, it will fail with the message encryption due to a flaw in macOS NTLM through SPNEGO mechanism
 
 ## 1.0.0 - 2020-08-19
 

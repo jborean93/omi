@@ -16,7 +16,8 @@ The following changes have been made:
   + Upstream failed on macOS due to the code using system defined macros
   + Upstream failed on newer `gcc` versions that had stricter default set
 + Fixed up the GSSAPI implementation to work properly
-  + macOS works with both Kerberos and NTLM auth out of the box as the correct symbols and workflow is being used
+  + macOS works with Kerberos out of the box as the correct symbols and workflow is being used
+  + Technically NTLM auth on macOS can work but only does when running over HTTPS. This is due to a fundamental problem with macOS and NTLM when it's wrapped in SPNEGO
   + Ensure the mech set favours Kerberos and only fallsback to NTLM if Kerberos fails
   + Added the `GSS_C_DELEG_POLICY_FLAG` flag to support credential delegation with Kerberos
   + Use `GSS_C_NT_HOSTBASED_SERVICE` with the service `http@<hostname>` principal which works in more situations than before
@@ -279,4 +280,5 @@ Otherwise other features/changes that are in the backlog are:
   + OpenSUSE Leap 15
 + Add a way to specify the `omicli.conf` file through an env var instead of the hardcoded location
 + Try and find a better way to enable NTLM auth for macOS, current implementation is a bit of hack
++ Add a force NTLM auth to be used in conjunction with `-Authentication Negotiate`
 + Look at creating a "universal" build that OMI does in their normal releases
