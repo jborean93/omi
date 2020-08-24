@@ -143,6 +143,15 @@ static const char* sslstrerror(unsigned long SslError)
 
 #include "httpclient_private.h"
 
+// JBOREAN CHANGE: Used for creating channel binding data structure.
+#if AUTHORIZATION
+#if defined(is_macos)
+#include <GSS/GSS.h>
+#else
+#include <gssapi/gssapi.h>
+#endif
+#endif
+
 /*
     NOTE: Initialize the session map
 */
@@ -454,6 +463,8 @@ static MI_Result _Sock_Write(
 {
     int res;
     int sslError;
+    // JBOREAN CHANGE: Required for SSL_ERROR_SSL as we use the error char* twice.
+    char* sslErrorString = NULL;
 
     if (!handler->ssl)
     {
@@ -470,6 +481,8 @@ static MI_Result _Sock_Write(
 
     *sizeWritten = 0;
 
+    // JBOREAN CHANGE: SSL_connect is done when creating the socket now.
+    /*
     if (handler->connectDone)
     {
         res = SSL_write(handler->ssl, buf, buf_size);
@@ -481,13 +494,15 @@ static MI_Result _Sock_Write(
         LOGD2((ZT("_Sock_Write - SSL connect using socket %d returned result: %d, errno: %d (%s)"), handler->base.sock, res, errno, strerror(errno)));
         if (res > 0)
         {
-            /* we are done with accept */
+            // we are done with accept
             handler->connectDone = MI_TRUE;
             return _Sock_Write(handler,buf,buf_size,sizeWritten);
         }
-        /* perform regular error checking */
+        //perform regular error checking
     }
-
+    */
+    res = SSL_write(handler->ssl, buf, buf_size);
+    LOGD2((ZT("_Sock_Write - SSL_write using socket %d returned %d (< 0 for error) / %u bytes written, errno: %d (%s)"), handler->base.sock, res, (unsigned int)buf_size, errno, strerror(errno)));
 
     if (res == 0)
     {
@@ -530,7 +545,11 @@ static MI_Result _Sock_Write(
         break;
 
     case SSL_ERROR_SSL:
-        LOGE2((ZT("_Sock_Write - SSL_write/connect returned OpenSSL error %d (%s)"), sslError, ERR_error_string(sslError, NULL)));
+        // JBOREAN CHANGE: Use ERR_error_string to get the actual problem not just SSL_ERROR_SSL. Also report the
+        // error string back to PowerShell so end users can understand what went wrong.
+        sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+        handler->errMsg = (MI_Char*)sslErrorString;
+        LOGE2((ZT("_Sock_Write - SSL_write/connect returned OpenSSL error %d (%s)"), sslError, sslErrorString));
         break;
 
     default:
@@ -1615,6 +1634,13 @@ static MI_Boolean _RequestCallback(
 
         Sock_Close(handler->base.sock);
 
+        // JBOREAN CHANGE: Added new field that needs to be freed.
+        if (handler->channelBindingData)
+        {
+            PAL_Free(handler->channelBindingData);
+            handler->channelBindingData = NULL;
+        }
+
         if (handler->recvPage)
             PAL_Free(handler->recvPage);
 
@@ -1775,6 +1801,103 @@ static MI_Result _CreateSocketAndConnect(
 
     return MI_RESULT_WOULD_BLOCK;
 }
+
+// JBOREAN CHANGE: Used by _CreateConnectorSocket to create the channel binding token data for GSSAPI.
+#if AUTHORIZATION
+static MI_Result _CreateChannelBindingToken(
+    HttpClient_SR_SocketData* handler)
+{
+    MI_Result res = MI_RESULT_OK;
+    X509* certificate = NULL;
+    int algoNID;
+    const EVP_MD* algoType = NULL;
+    unsigned char* certHash = NULL;
+    unsigned int certHashLength;
+
+    const char* bindingPrefix = "tls-server-end-point:";
+    int bindingPrefixLength = strlen(bindingPrefix);
+    int bindingStructLength = sizeof(struct gss_channel_bindings_struct);
+    gss_channel_bindings_t bindings = NULL;
+
+    // TODO: OpenSSL 3.0.0 has deprecated SSL_get_peer_certificate in favour of SSL_get1_peer_certificate.
+    certificate = SSL_get_peer_certificate(handler->ssl);
+    if (!certificate)
+    {
+        LOGE2((ZT("_CreateChannelBindingToken - Failed to get TLS peer certificate - skipping CBT")));
+        res = MI_RESULT_FAILED;
+        goto Done;
+    }
+
+    if (!OBJ_find_sigid_algs(X509_get_signature_nid(certificate), &algoNID, NULL))
+    {
+        LOGE2((ZT("_CreateChannelBindingToken - Failed to derive TLS signature algorithm from peer certificate - skipping CBT")));
+        res = MI_RESULT_FAILED;
+        goto Done;
+    }
+
+    switch (algoNID)
+    {
+    case NID_sha512:
+        algoType = EVP_sha512();
+        break;
+    case NID_sha384:
+        algoType = EVP_sha384();
+        break;
+
+    // RFC 5929 states the hash algorithm is to be SHA256 if the digest is less than 256 bits.
+    case NID_md5:
+    case NID_sha1:
+    case NID_sha224:
+    case NID_sha256:
+    default:
+        algoType = EVP_sha256();
+        break;
+    }
+
+    certHash = PAL_Malloc(EVP_MAX_MD_SIZE);
+    if (certHash == NULL)
+    {
+        LOGE2((ZT("_CreateChannelBindingToken - Failed to allocate certificate hash buffer - skipping CBT")));
+        res = MI_RESULT_SERVER_LIMITS_EXCEEDED;
+        goto Done;
+    }
+
+    if (!X509_digest(certificate, algoType, certHash, &certHashLength))
+    {
+        res = MI_RESULT_FAILED;
+        goto Done;
+    }
+
+    handler->channelBindingData = (unsigned char*)PAL_Calloc(1, bindingStructLength + bindingPrefixLength + certHashLength);
+    if (handler->channelBindingData == NULL)
+    {
+        LOGE2((ZT("_CreateChannelBindingToken - Failed to allocate gss_channel_bindings_t buffer - skipping CBT")));
+        res = MI_RESULT_SERVER_LIMITS_EXCEEDED;
+        goto Done;
+    }
+
+    bindings = (gss_channel_bindings_t)handler->channelBindingData;
+    bindings->application_data.length = bindingPrefixLength + certHashLength;
+    bindings->application_data.value = handler->channelBindingData + bindingStructLength;
+    memcpy(bindings->application_data.value, bindingPrefix, bindingPrefixLength);
+    memcpy(bindings->application_data.value + bindingPrefixLength, certHash, certHashLength);
+
+    LOGD2((ZT("_CreateChannelBindingToken - OK exit")));
+
+Done:
+    if (certificate)
+    {
+        X509_free(certificate);
+    }
+
+    if (certHash)
+    {
+        PAL_Free(certHash);
+    }
+
+    return res;
+}
+#endif
 
 static MI_Result _CreateConnectorSocket(
     HttpClient* self,
@@ -2776,6 +2899,53 @@ MI_Result HttpClient_New_Connector2(
             client->probableCause = (Probable_Cause_Data*)&CONNECT_ERROR;
             LOGE2((ZT("HttpClient_New_Connector - _CreateConnectorSocket failed. result: %d (%s)"), r, mistrerror(r)));
             goto Error;
+        }
+
+        // JBOREAN CHANGE: Make sure the SSL context has been connected so we can get the peer certificate for GSSAPI TLS
+        // channel binding token support. This must be done before the authentication header is build.
+        if (secure)
+        {
+            int res = SSL_connect(client->connector->ssl);
+            if (res < 1)
+            {
+                r = MI_RESULT_FAILED;
+
+                int sslError = SSL_get_error(client->connector->ssl, res);
+                char* sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+                LOGE2((ZT("HttpClient_New_Connector - SSL connect returned OpenSSL error %d (%s)"), sslError, sslErrorString));
+
+                // Make sure the probable cause contains the error info from OpenSSL so users aren't in the dark as to
+                // what failed.
+                const char* errorInfo = "SSL connection failure - ";
+                int msgLength = strlen(errorInfo) + strlen(sslErrorString);
+                client->probableCause = (Probable_Cause_Data*)PAL_Malloc(sizeof(Probable_Cause_Data) + msgLength + 1);
+
+                client->probableCause->alloc_p = (void*)client->probableCause;
+                client->probableCause->type = ERROR_WSMAN_DESTINATION_UNREACHABLE;
+                client->probableCause->probable_cause_id = WSMAN_CIMERROR_PROBABLE_CAUSE_CONNECTION_ERROR;
+                client->probableCause->description = (MI_Char *)(client->probableCause + 1);
+
+                MI_Char* pDescription = (MI_Char *)client->probableCause->description;
+                memcpy(pDescription, errorInfo, strlen(errorInfo));
+                pDescription += strlen(errorInfo);
+
+                memcpy(pDescription, sslErrorString, strlen(sslErrorString));
+                pDescription += strlen(sslErrorString);
+                pDescription = ".";
+
+                // Ensure the selector is cleaned up if we failed to create the TLS context.
+                Selector_Destroy(client->selector);
+                client->connector = NULL;
+
+                goto Error;
+            }
+
+            LOGD2((ZT("HttpClient_New_Connector - SSL connect using socket %d returned result: %d, errno: %d (%s)"), client->connector->base.sock, res, errno, strerror(errno)));
+
+#if AUTHORIZATION
+            // Getting the CBT data shouldn't warrant a failure so we just ignore a failure for now.
+            _CreateChannelBindingToken(client->connector);
+#endif
         }
 
         // If we have an authorisation method, eg Basic, Negotiate, etc, we are not yet authorised. But if there is none, then
