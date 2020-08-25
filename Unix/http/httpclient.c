@@ -63,8 +63,37 @@ typedef void SSL_CTX;
 #define SSL_accept(c) 0
 #define SSL_connect(c) 0
 
-#endif
 
+// JBOREAN CHANGE: New OpenSSL definitions that are being used. This should matter as we only build for POSIX
+// compliant systems but best to be safe than sorry.
+typedef void EVP_MD;
+typedef void X509;
+#define EVP_sha256() 0
+#define EVP_sha384() 0
+#define EVP_sha512() 0
+#define OBJ_find_sigid_algs(s, p, r) 0
+#define SSL_get_peer_certificate(s) 0
+#define X509_digest(d, t, m, l) 0
+#define X509_free(a) 0
+#define X509_get_signature_nid(c) 0
+#define EVP_MAX_MD_SIZE 4
+#define NID_md5 4
+#define NID_sha1 64
+#define NID_sha224 675
+#define NID_sha256 672
+#define NID_sha384 674
+#define NID_sha512 674
+
+#else
+
+// X509_get_signature_nid() was added in SSL 1.0.2, define the fallback for older versions.
+#if OPENSSL_VERSION_NUMBER < 0x1000200fL // Old than SSL 1.0.2
+int X509_get_signature_nid(const X509 *x)
+{
+    return OBJ_obj2nid(x->sig_alg->algorithm);
+}
+#endif
+#endif
 
 #ifdef ENABLE_TRACING
 # define TRACING_LEVEL 4

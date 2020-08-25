@@ -35,6 +35,9 @@ The following changes have been made:
 + Increased the password length limit to 8KiB to support modern authentication required by O365 WSMan connections
   + The original limit was 1KiB and I've seen JWT tokens that modern auth in O365 exceed 1.5KiB
   + I've set it to 8KiB as that seems to be a common default of HTTP header sizes, if it does exceed that then the server would return a 413 anyway
++ Added support for sending the channel binding tokens when using GSSAPI on a HTTPS connection
+  + This will allow the client to authenticate when the WSMan service has set `Auth/CbtHardeningLevel = Strict`
+  + If the client fails to derive the CBT token, further information can be found in the [logs](#troubleshooting)
 
 I am not looking at fixing any underlying problems in this library or work on the server side part of OMI.
 This is purely focusing on improving the experience when using WinRM as a client on non-Windows based hosts within PowerShell.
