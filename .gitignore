@@ -29,4 +29,5 @@ __pycache__/
 /ci-*.zip
 /Unix/build-*
 /integration_environment/.vagrant
+/integration_environment/cert_setup
 /integration_environment/exchange*

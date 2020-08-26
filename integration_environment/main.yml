@@ -11,6 +11,67 @@
   tags:
   - windows
   tasks:
+  - name: create cert output folder
+    file:
+      path: '{{ playbook_dir }}/cert_setup'
+      state: directory
+    delegate_to: localhost
+
+  - name: create ssl config file
+    template:
+      src: openssl.conf.tmpl
+      dest: '{{ playbook_dir }}/cert_setup/openssl.conf'
+    delegate_to: localhost
+
+  - name: generate CA and WinRM certificates
+    script: generate_cert.sh {{ (inventory_hostname ~ "." ~ domain_name) | quote }} password
+    args:
+      creates: '{{ playbook_dir }}/cert_setup/complete.txt'
+      chdir: '{{ playbook_dir }}/cert_setup'
+    delegate_to: localhost
+
+  - name: copy certifies to the Windows host
+    win_copy:
+      src: '{{ playbook_dir }}/cert_setup'
+      dest: C:\Windows\TEMP\
+
+  - name: import the WinRM certs to the certificate store
+    win_certificate_store:
+      path: C:\Windows\TEMP\cert_setup\{{ item }}.pfx
+      key_exportable: no
+      key_storage: machine
+      password: password
+      state: present
+      store_location: LocalMachine
+      store_name: My
+    register: winrm_cert_info
+    with_items:
+    - sha1
+    - sha224
+    - sha256
+    - sha256-pss
+    - sha384
+    - sha512
+    - sha512-pss
+
+  - name: set friendlyname on imported certificates for test info
+    win_shell: |
+      $ErrorActionPreference = 'Stop'
+      $desiredName = '{{ item.item }}'
+
+      $cert = Get-Item -LiteralPath Cert:\LocalMachine\My\{{ item.thumbprints[0] }}
+      if ($cert.FriendlyName -ne $desiredName) {
+          $cert.FriendlyName = $desiredName
+          $true
+      } else {
+          $false
+      }
+    with_items: '{{ winrm_cert_info.results }}'
+    loop_control:
+      label: '{{ item.item }}'
+    register: winrm_cert_friendly_name
+    changed_when: winrm_cert_friendly_name.stdout | trim | bool
+
   - name: get network connection for private adapter
     win_shell: |
       foreach ($instance in (Get-CimInstance -ClassName Win32_NetworkAdapter -Filter "Netenabled='True'")) {
@@ -72,6 +133,18 @@
     vars:
       ansible_become_user: '{{ domain_upn }}'
       ansible_become_pass: '{{ domain_password }}'
+
+  - name: make sure the CBT level is set to Strict
+    win_shell: |
+      $cbtPath = 'WSMan:\localhost\Service\Auth\CbtHardeningLevel'
+      if ((Get-Item -LiteralPath $cbtPath).Value -ne 'Strict') {
+          Set-Item -LiteralPath $cbtPath -Value Strict
+          $true
+      } else {
+          $false
+      }
+    register: cbt_result
+    changed_when: cbt_result.stdout | trim | bool
 
 - name: set up Linux test host
   hosts: linux
