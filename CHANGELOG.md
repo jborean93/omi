@@ -3,7 +3,9 @@
 This is the changelog for this fork of OMI.
 It documents the changes in each of the tagged releases
 
-## 1.0.2 - TBD
+## 1.1.0 - TBD
+
++ Added Archlinux as a known distribution
 
 ## 1.0.1 - 2020-08-20
 

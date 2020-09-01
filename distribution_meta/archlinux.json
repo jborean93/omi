@@ -1,0 +1,24 @@
+{
+    "container_image": "archlinux:latest",
+    "package_manager": "pacman",
+    "microsoft_repo": "",
+    "build_deps": [
+        "gcc",
+        "inetutils",
+        "krb5",
+        "lsb-release",
+        "make",
+        "openssl",
+        "pkgconf",
+        "which"
+    ],
+    "test_deps": [
+        "aur:gss-ntlmssp",
+        "aur:powershell-bin",
+        "docbook-xsl",
+        "doxygen",
+        "krb5",
+        "libwbclient",
+        "which"
+    ]
+}
