@@ -34,6 +34,8 @@ stages:
           distribution: ubuntu16.04
         Ubuntu18.04:
           distribution: ubuntu18.04
+        Archlinux:
+          distribution: archlinux
 
     steps:
     - script: ./build.py $(distribution) --docker

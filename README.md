@@ -57,6 +57,7 @@ There are some other arguments you can supply to alter the behaviour of the buil
 The aim is to support the same distributions that PowerShell supports but so far the build tool only supports a limited number of distributions.
 The distributions that are currently setup in the `build.py` script are:
 
++ [archlinux.json](distribution_meta/archlinux.json)
 + [centos7.json](distribution_meta/centos7.json)
 + [centos8.json](distribution_meta/centos8.json)
 + [debian8.json](distribution_meta/debian8.json)

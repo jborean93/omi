@@ -47,9 +47,10 @@ def build_package_command(package_manager, packages):  # type: (str, List[str]) 
     """ Generates a command to install packages for a specific package manager. """
     package_boilerplate = {
         'apt': 'apt-get -q update\nDEBIAN_FRONTEND=noninteractive apt-get -q install -y',
-        'brew': 'brew install',
-        'yum': 'yum install -y -q',
         'dnf': 'dnf install -y -q',
+        'brew': 'brew install',
+        'pacman': 'pacman -Sy --noconfirm --overwrite \'*\'',
+        'yum': 'yum install -y -q',
     }
 
     if package_manager not in package_boilerplate:
@@ -67,9 +68,63 @@ def build_package_command(package_manager, packages):  # type: (str, List[str]) 
             else:
                 brew_packages.append(package)
 
-        package_command = build_multiline_command(package_boilerplate[package_manager], packages)
+        package_command = build_multiline_command(package_boilerplate[package_manager], brew_packages)
         if cask_packages:
             package_command += '\n\n' + build_multiline_command('brew cask install', cask_packages)
+
+    elif package_manager == 'pacman':
+        pacman_packages = set()
+        aur_packages = set()
+
+        for package in packages:
+            if package.startswith('aur:'):
+                # Installing an AUR package requires some extra binaries
+                pacman_packages.update({'base-devel', 'git', 'sudo'})
+                aur_packages.add(package[4:])
+
+            else:
+                pacman_packages.add(package)
+
+        package_command = build_multiline_command(package_boilerplate[package_manager], pacman_packages)
+
+        # gss-ntlmssp in AUR doesn't seem to work, just build it ourselves for now
+        if 'gss-ntlmssp' in aur_packages:
+            aur_packages.remove('gss-ntlmssp')
+            package_command += '\n' + '''
+git clone https://github.com/gssapi/gss-ntlmssp.git /tmp/gss-ntlmssp
+pushd /tmp/gss-ntlmssp
+autoreconf -f -i
+./configure
+make && make install
+popd
+rm -rf /tmp/gss-ntlmssp
+
+mkdir -p /etc/gss/mech.d
+echo "gssntlmssp_v1    1.3.6.1.4.1.311.2.2.10    /usr/local/lib/gssntlmssp/gssntlmssp.so" > /etc/gss/mech.d/ntlm.conf'''
+
+        if aur_packages:
+            # We cannot run makpkg as root so we need to create another user
+            package_command += '\n' + '''
+AUR_USER=aur_user
+
+echo "Creating aur user for running makepg"
+useradd -m "${AUR_USER}"
+echo "${AUR_USER}:" | chpasswd -e
+echo "${AUR_USER}      ALL = NOPASSWD: ALL" >> /etc/sudoers
+
+AUR_PACKAGES=('%s')
+for PACKAGE in "${AUR_PACKAGES[@]}"; do
+    echo "Installing ${PACKAGE} from AUR"
+
+    PACKAGE_DIR="/tmp/${PACKAGE}"
+    git clone "https://aur.archlinux.org/${PACKAGE}.git" "${PACKAGE_DIR}"
+    chmod 777 "${PACKAGE_DIR}"
+
+    pushd "${PACKAGE_DIR}"
+    su "${AUR_USER}" -c 'makepkg --install --noconfirm --syncdeps'
+    popd
+    rm -rf "${PACKAGE_DIR}"
+done''' % "' '".join(aur_packages)
 
     else:
         package_command = build_multiline_command(package_boilerplate[package_manager], packages)
@@ -89,6 +144,9 @@ rm -f repo.deb''' % repository
 
     elif package_manager == 'brew':
         return 'echo "Not applicable on macOS"'
+
+    elif package_manager == 'pacman':
+        return 'echo "Not applicable on Archlinux"'
 
     elif package_manager in ['yum', 'dnf']:
         return 'curl -s %s | tee /etc/yum.repos.d/microsoft.repo' % repository
