@@ -6,6 +6,7 @@ It documents the changes in each of the tagged releases
 ## 1.2.0 - TBD
 
 + Added support for channel binding tokens to work with `Auth/CbtHardeningLevel = Strict`
++ Improved error messages displayed when dealing with OpenSSL errors
 
 ## 1.1.0 - 2020-09-01
 

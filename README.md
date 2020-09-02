@@ -280,7 +280,6 @@ Otherwise other features/changes that are in the backlog are:
 + Continue to add more distributions for building/testing
   + Alpine 3.9
   + Alpine 3.10
-  + Archlinux
   + OpenSUSE 42.3
   + OpenSUSE Leap 15
 + Add a way to specify the `omicli.conf` file through an env var instead of the hardcoded location

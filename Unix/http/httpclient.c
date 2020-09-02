@@ -2930,53 +2930,6 @@ MI_Result HttpClient_New_Connector2(
             goto Error;
         }
 
-        // JBOREAN CHANGE: Make sure the SSL context has been connected so we can get the peer certificate for GSSAPI TLS
-        // channel binding token support. This must be done before the authentication header is build.
-        if (secure)
-        {
-            int res = SSL_connect(client->connector->ssl);
-            if (res < 1)
-            {
-                r = MI_RESULT_FAILED;
-
-                int sslError = SSL_get_error(client->connector->ssl, res);
-                char* sslErrorString = ERR_error_string(ERR_get_error(), NULL);
-                LOGE2((ZT("HttpClient_New_Connector - SSL connect returned OpenSSL error %d (%s)"), sslError, sslErrorString));
-
-                // Make sure the probable cause contains the error info from OpenSSL so users aren't in the dark as to
-                // what failed.
-                const char* errorInfo = "SSL connection failure - ";
-                int msgLength = strlen(errorInfo) + strlen(sslErrorString);
-                client->probableCause = (Probable_Cause_Data*)PAL_Malloc(sizeof(Probable_Cause_Data) + msgLength + 1);
-
-                client->probableCause->alloc_p = (void*)client->probableCause;
-                client->probableCause->type = ERROR_WSMAN_DESTINATION_UNREACHABLE;
-                client->probableCause->probable_cause_id = WSMAN_CIMERROR_PROBABLE_CAUSE_CONNECTION_ERROR;
-                client->probableCause->description = (MI_Char *)(client->probableCause + 1);
-
-                MI_Char* pDescription = (MI_Char *)client->probableCause->description;
-                memcpy(pDescription, errorInfo, strlen(errorInfo));
-                pDescription += strlen(errorInfo);
-
-                memcpy(pDescription, sslErrorString, strlen(sslErrorString));
-                pDescription += strlen(sslErrorString);
-                pDescription = ".";
-
-                // Ensure the selector is cleaned up if we failed to create the TLS context.
-                Selector_Destroy(client->selector);
-                client->connector = NULL;
-
-                goto Error;
-            }
-
-            LOGD2((ZT("HttpClient_New_Connector - SSL connect using socket %d returned result: %d, errno: %d (%s)"), client->connector->base.sock, res, errno, strerror(errno)));
-
-#if AUTHORIZATION
-            // Getting the CBT data shouldn't warrant a failure so we just ignore a failure for now.
-            _CreateChannelBindingToken(client->connector);
-#endif
-        }
-
         // If we have an authorisation method, eg Basic, Negotiate, etc, we are not yet authorised. But if there is none, then
         // go ahead if the server will let you, Hint, it probably won't
 
@@ -3317,6 +3270,30 @@ MI_Result HttpClient_StartRequestV2(
     MI_Result           r;
     const char *auth_header = NULL;
     const char* sessionCookie = NULL;
+
+    // JBOREAN CHANGE: Make sure the SSL context has been connected so we can get the peer certificate for GSSAPI TLS
+    // channel binding token support. This must be done before the authentication header is build.
+    if (client->connector->ssl)
+    {
+        int res = SSL_connect(client->connector->ssl);
+        if (res < 1)
+        {
+            int sslError = SSL_get_error(client->connector->ssl, res);
+            char* sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+            client->connector->errMsg = (MI_Char*)sslErrorString;
+            LOGE2((ZT("HttpClient_StartRequestV2 - SSL connect returned OpenSSL error %d (%s)"), sslError, sslErrorString));
+
+            r = MI_RESULT_FAILED;
+            goto Error;
+        }
+
+        LOGD2((ZT("HttpClient_StartRequestV2 - SSL connect using socket %d returned result: %d, errno: %d (%s)"), client->connector->base.sock, res, errno, strerror(errno)));
+
+#if AUTHORIZATION
+        // Getting the CBT data shouldn't warrant a failure so we just ignore a failure for now.
+        _CreateChannelBindingToken(client->connector);
+#endif
+    }
 
     // Get the session cookie from the last response, if available
     sessionCookie = SessionMap_GetCookie(&_sessionMap, client->sessionId);

@@ -100,11 +100,6 @@ static void PostResult(WsmanClient *self, const MI_Char *message, MI_Result resu
         {
             errorMsg->errorMessage = Batch_Tcsdup(errorMsg->base.batch, message);
         }
-        // JBOREAN CHANGE: If no error message was returned at least return the probably cause error.
-        else if (cause && cause->description)
-        {
-            errorMsg->errorMessage = Batch_Tcsdup(errorMsg->base.batch, cause->description);
-        }
         else
         {
             errorMsg->errorMessage = NULL;
