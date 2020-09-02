@@ -72,12 +72,12 @@ openssl req \
     -subj "/CN=OMI Root" \
     -passin pass:"${PASSWORD}"
 
-generate sha1
-generate sha224
-generate sha256
-generate sha256 pss
-generate sha384
-generate sha512
-generate sha512 pss
+{% for info in certificate_info %}
+{% if '-' in info.name %}
+generate {{ info.name.split('-')[0] }} {{ info.name.split('-')[1] }}
+{% else %}
+generate {{ info.name }}
+{% endif %}
+{% endfor %}
 
 touch complete.txt

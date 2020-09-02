@@ -8,13 +8,35 @@
 - name: setup domain controller
   hosts: windows
   gather_facts: no
+  vars:
+    certificate_info:
+    - name: sha1
+      port: 29900
+    - name: sha256
+      port: 29901
+    - name: sha256-pss
+      port: 29902
+    - name: sha384
+      port: 29903
+    - name: sha512
+      port: 29904
+    - name: sha512-pss
+      port: 29905
   tags:
   - windows
+
   tasks:
   - name: create cert output folder
     file:
       path: '{{ playbook_dir }}/cert_setup'
       state: directory
+    delegate_to: localhost
+
+  - name: create generate_cert script
+    template:
+      src: generate_cert.sh.tmpl
+      dest: '{{ playbook_dir }}/cert_setup/generate_cert.sh'
+      mode: '700'
     delegate_to: localhost
 
   - name: create ssl config file
@@ -24,20 +46,20 @@
     delegate_to: localhost
 
   - name: generate CA and WinRM certificates
-    script: generate_cert.sh {{ (inventory_hostname ~ "." ~ domain_name) | quote }} password
+    shell: ./generate_cert.sh {{ (inventory_hostname ~ "." ~ domain_name) | quote }} password
     args:
       creates: '{{ playbook_dir }}/cert_setup/complete.txt'
       chdir: '{{ playbook_dir }}/cert_setup'
     delegate_to: localhost
 
-  - name: copy certifies to the Windows host
+  - name: copy certificates to the Windows host
     win_copy:
       src: '{{ playbook_dir }}/cert_setup'
       dest: C:\Windows\TEMP\
 
   - name: import the WinRM certs to the certificate store
     win_certificate_store:
-      path: C:\Windows\TEMP\cert_setup\{{ item }}.pfx
+      path: C:\Windows\TEMP\cert_setup\{{ item.name }}.pfx
       key_exportable: no
       key_storage: machine
       password: password
@@ -45,32 +67,93 @@
       store_location: LocalMachine
       store_name: My
     register: winrm_cert_info
-    with_items:
-    - sha1
-    - sha224
-    - sha256
-    - sha256-pss
-    - sha384
-    - sha512
-    - sha512-pss
+    loop_control:
+      label: '{{ item.name }}'
+    with_items: '{{ certificate_info }}'
 
-  - name: set friendlyname on imported certificates for test info
+  - name: set friendlyname on imported certificates for test info and set up WinRM listener
     win_shell: |
       $ErrorActionPreference = 'Stop'
-      $desiredName = '{{ item.item }}'
+      $changed = $false
+      $port = {{ item.item.port }}
+      $desiredName = "test-$port-{{ item.item.name }}"
+      $thumbprint = '{{ item.thumbprints[0] }}'
 
-      $cert = Get-Item -LiteralPath Cert:\LocalMachine\My\{{ item.thumbprints[0] }}
+      $cert = Get-Item -LiteralPath "Cert:\LocalMachine\My\$thumbprint"
       if ($cert.FriendlyName -ne $desiredName) {
           $cert.FriendlyName = $desiredName
+          $changed = $true
+      }
+
+      $listener = Get-ChildItem -Path WSMan:\localhost\Listener |
+          Where-Object { $_.Keys -contains "Transport=HTTPS" } |
+          ForEach-Object -Process {
+              $details = Get-ChildItem -Path $_.PSPath
+              [PSCustomObject]@{
+                  PSPath = $_.PSPath
+                  Port = ($details | Where-Object Name -eq Port).Value
+                  CertificateThumbprint = ($details | Where-Object Name -eq CertificateThumbprint).Value
+              }
+          } |
+          Where-Object Port -eq $port
+
+      if ($listener -and $listener.CertificateThumbprint -ne $thumbprint) {
+          Remove-Item -LiteralPath $listener.PSPath -Force -Recurse
+          $listener = $null
+          $changed = $true
+      }
+
+      if (-not $listener) {
+          $wsmanParams = @{
+              ResourceURI = 'winrm/config/Listener'
+              SelectorSet = @{
+                  Address = "IP:$port"
+                  Transport = 'HTTPS'
+              }
+              ValueSet = @{
+                  CertificateThumbprint = $thumbprint
+                  Port = $port
+              }
+          }
+          $null = New-WSManInstance @wsmanParams
+          $changed = $true
+      }
+
+      $changed
+    with_items: '{{ winrm_cert_info.results }}'
+    loop_control:
+      label: '{{ item.item.name }}'
+    register: winrm_cert_friendly_name
+    changed_when: winrm_cert_friendly_name.stdout | trim | bool
+
+  - name: make sure the WinRM HTTPS listener ports are open
+    win_firewall_rule:
+      name: WinRM HTTPS ({{ item.name }} - {{ item.port }})
+      localport: '{{ item.port }}'
+      action: allow
+      direction: in
+      protocol: tcp
+      profiles: domain,private,public
+      state: present
+      enabled: yes
+    with_items: '{{ certificate_info }}'
+    loop_control:
+      label: '{{ item.name }}'
+
+  - name: make sure the CBT level is set to Strict
+    win_shell: |
+      $cbtPath = 'WSMan:\localhost\Service\Auth\CbtHardeningLevel'
+      if ((Get-Item -LiteralPath $cbtPath).Value -ne 'Strict') {
+          Set-Item -LiteralPath $cbtPath -Value Strict
           $true
       } else {
           $false
       }
-    with_items: '{{ winrm_cert_info.results }}'
-    loop_control:
-      label: '{{ item.item }}'
-    register: winrm_cert_friendly_name
-    changed_when: winrm_cert_friendly_name.stdout | trim | bool
+    register: cbt_result
+    changed_when: cbt_result.stdout | trim | bool
+
+  - fail:
+      msg: abc
 
   - name: get network connection for private adapter
     win_shell: |
@@ -133,18 +216,6 @@
     vars:
       ansible_become_user: '{{ domain_upn }}'
       ansible_become_pass: '{{ domain_password }}'
-
-  - name: make sure the CBT level is set to Strict
-    win_shell: |
-      $cbtPath = 'WSMan:\localhost\Service\Auth\CbtHardeningLevel'
-      if ((Get-Item -LiteralPath $cbtPath).Value -ne 'Strict') {
-          Set-Item -LiteralPath $cbtPath -Value Strict
-          $true
-      } else {
-          $false
-      }
-    register: cbt_result
-    changed_when: cbt_result.stdout | trim | bool
 
 - name: set up Linux test host
   hosts: linux
