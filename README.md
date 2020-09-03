@@ -38,6 +38,11 @@ The following changes have been made:
 + Added support for sending the channel binding tokens when using GSSAPI on a HTTPS connection
   + This will allow the client to authenticate when the WSMan service has set `Auth/CbtHardeningLevel = Strict`
   + If the client fails to derive the CBT token, further information can be found in the [logs](#troubleshooting)
++ Turned on HTTPS certificate verification by default
+  + Any HTTPS connections will have OpenSSL check the server's certificate like a proper HTTPS connection
+  + You still need to tell PowerShell to skip the checks but those skip options are ignored in OMI
+  + To truly skip cert verification, set the env vars `OMI_SKIP_CA_CHECK=1` and `OMI_SKIP_CN_CHECK=1`
+  + TODO: Document revocation checks and why they aren't implemented
 
 I am not looking at fixing any underlying problems in this library or work on the server side part of OMI.
 This is purely focusing on improving the experience when using WinRM as a client on non-Windows based hosts within PowerShell.
@@ -105,6 +110,9 @@ A few thing to note when using the WSMan transport in PowerShell
 + When wanting to use Kerberos auth you need to specify the user in the UPN format, e.g. `username@DOMAIN.COM`. Do not use the Netlogon form `DOMAIN\username`
 + If you want to use Negotiate/Kerberos auth you must also supply `-Authentication Negotiate` or `-Authentication Kerberos` to the cmdlet that uses WSMan
 + When using Basic auth you MUST connect over HTTPS and skip cert verification by adding `-SessionOption (New-PSSession -SkipCACheck -SkipCNCheck)`
+  + While this tells PowerShell to skip the certificate checks, this library will still continue to do so
+  + This is due to PowerShell having a hardcoded check for these session options but not actually passing it down to the OMI library
+  + I've opted to make HTTPS secure by default and to actually skip the certificate verification set the env vars `OMI_SKIP_CA_CHECK=1` and `OMI_SKIP_CN_CHECK=1`
 
 ## Testing
 
@@ -254,9 +262,13 @@ Can't fix issues are either issues that would take a lot of effort to implement 
 + Cannot do basic auth over HTTP
   + PowerShell hardcodes a check that stops you from doing this for security reasons
   + Really why would you want to do this anyway
-+ No certificate validation is done on a HTTPS connection
++ The session options `-SessionOption (New-PSSession -SkipCACheck -SkipCNCheck)` are ignored and OMI will always verify the HTTPS certificate
   + PowerShell hardcodes a check that forces you to do `-UseSSL -SessionOption (New-PSSession -SkipCACheck -SkipCNCheck)`
-  + Even if cert validation was added we cannot change the behaviour on PowerShell
+  + This is because the upstream OMI library never did any certificate validation and PowerShell wanted you to be aware of that
+  + Since the `1.2.0` release of this fork, cert validation is set to always occur regardless of the session options from PowerShell
+  + To disable certificate verification set the env vars `OMI_SKIP_CA_CHECK=1` and `OMI_SKIP_CN_CHECK=1`
+  + You cannot set this for a specific connection, it's either always verify (default) or not (env vars set to `1`)
+  + A future version of this fork may start to respect the `-SessionOption` values from PowerShell but until they are actually plumbed in and become optional they will be ignored
 + Cannot add CredSSP authentication
   + Could technically implement the auth code in this library but that won't be easy
   + Cannot bypass the hardcoded check in PowerShell that causes a failure when `-Authentication CredSSP`

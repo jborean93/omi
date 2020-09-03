@@ -1709,6 +1709,16 @@ static int _ctxVerify(
     return preverify_ok;
 }
 
+// JBOREAN CHANGE: Common code to check a flag that can be set by an env var.
+/*
+  Check if an environment variable is set and whether it's a truthy (set and not 0 or false) or not.
+*/
+static MI_Boolean _GetEnvVarBool(const char* envVarName)
+{
+    char* envValue = getenv(envVarName);
+    return envValue && !(Strcasecmp(envValue, "0") == 0 || Strcasecmp(envValue, "false") == 0);
+}
+
 /*
  Create an Open SSL context that will be used for secure communication. Set up server and client
  certificate authentication if specified.
@@ -1718,9 +1728,16 @@ static MI_Result _CreateSSLContext(
     const char* trustedCertsDir,
     const char* certFile,
     const char* privateKeyFile,
-    SSL_Options sslOptions)
+    SSL_Options sslOptions,
+    // JBOREAN CHANGE: Added the hostname for hostname checking
+    const char* host)
 {
     SSL_CTX *sslContext;
+    // JBOREAN CHANGE: Use an env var to allow a user to specify that TLS certs must be verified.
+    char* sslErrorString = NULL;
+    MI_Boolean skipCACheck = _GetEnvVarBool("OMI_SKIP_CA_CHECK");
+    MI_Boolean skipCNCheck = _GetEnvVarBool("OMI_SKIP_CN_CHECK");
+    const char* hostnameToVerify = host;
 
     if (CreateSSLContext(&sslContext, sslOptions) != MI_RESULT_OK)
         return MI_RESULT_FAILED;
@@ -1737,6 +1754,44 @@ static MI_Result _CreateSSLContext(
             LOGE2((ZT("_CreateSSLContext - Cannot set directory containing trusted certificate(s) to %s"), trustedCertsDir));
             trace_SSL_BadTrustDir(trustedCertsDir);
         }
+        // JBOREAN CHANGE: Instead of only trusting if a custom trust cert dir is set we always trust unless opted out
+        // by the env vars OMI_SKIP_CA_CHECK and OMI_SKIP_CN_CHECK
+        // SSL_CTX_set_verify(sslContext, SSL_VERIFY_PEER, _ctxVerify);
+    }
+    else
+    {
+        // JBOREAN CHANGE: Actually use the default paths for the host, also respects the SSL_CERT_DIR and
+        // SSL_CERT_FILE env vars.
+        if (!SSL_CTX_set_default_verify_paths(sslContext))
+        {
+            sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+            LOGE2((ZT("_CreateSSLContext - Failed to set the default verify paths (%s)"), sslErrorString));
+            SSL_CTX_free(sslContext);
+            sslContext = NULL;
+            return MI_RESULT_FAILED;
+        }
+    }
+
+    // Hostname verification was only added in OpenSSL 1.0.2 or newer. Debian 8 is the only host that still runs with
+    // an older version so we just need to make sure we document that.
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+    if (skipCNCheck)  // If end user doesn't want to check the CN, pass in a NULL hostname to the SSL_CTX.
+        hostnameToVerify = NULL;
+
+    X509_VERIFY_PARAM* param = SSL_CTX_get0_param(sslContext);
+    X509_VERIFY_PARAM_set_hostflags(param, 0x4);  //0x4 X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS
+    if (!X509_VERIFY_PARAM_set1_host(param, host, 0))
+    {
+        sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+        LOGE2((ZT("_CreateSSLContext - Failed to set hostname verification (%s)"), sslErrorString));
+        SSL_CTX_free(sslContext);
+        sslContext = NULL;
+        return MI_RESULT_FAILED;
+    }
+#endif
+
+    if (!(skipCACheck && skipCNCheck))
+    {
         SSL_CTX_set_verify(sslContext, SSL_VERIFY_PEER, _ctxVerify);
     }
 
@@ -2906,7 +2961,8 @@ MI_Result HttpClient_New_Connector2(
         Once_Invoke(&sslInit, SSL_Init_Fn, NULL);
 
         /* create context */
-        r = _CreateSSLContext(client, trusted_certs_dir, cert_file, private_key_file, sslOptions);
+        // JBOREAN CHANGE: Pass in the hostname for cert verification.
+        r = _CreateSSLContext(client, trusted_certs_dir, cert_file, private_key_file, sslOptions, host);
 
         if (r != MI_RESULT_OK)
         {
