@@ -8,9 +8,190 @@
 - name: setup domain controller
   hosts: windows
   gather_facts: no
+  vars:
+    certificate_info:
+    - name: sha1
+      port: 29900
+    - name: sha256
+      port: 29902
+    - name: sha256-pss
+      port: 29904
+    - name: sha384
+      port: 29906
+    - name: sha512
+      port: 29908
+    - name: sha512-pss
+      port: 29910
   tags:
   - windows
+
   tasks:
+  - name: create cert output folder
+    file:
+      path: '{{ playbook_dir }}/cert_setup'
+      state: directory
+    delegate_to: localhost
+
+  - name: create generate_cert script
+    template:
+      src: generate_cert.sh.tmpl
+      dest: '{{ playbook_dir }}/cert_setup/generate_cert.sh'
+      mode: '700'
+    delegate_to: localhost
+
+  - name: create ssl config file
+    template:
+      src: openssl.conf.tmpl
+      dest: '{{ playbook_dir }}/cert_setup/openssl.conf'
+    delegate_to: localhost
+
+  - name: generate CA and WinRM certificates
+    shell: ./generate_cert.sh {{ (inventory_hostname ~ "." ~ domain_name) | quote }} password
+    args:
+      creates: '{{ playbook_dir }}/cert_setup/complete.txt'
+      chdir: '{{ playbook_dir }}/cert_setup'
+    delegate_to: localhost
+
+  - name: copy certificates to the Windows host
+    win_copy:
+      src: '{{ playbook_dir }}/cert_setup'
+      dest: C:\Windows\TEMP\
+
+  - name: import the WinRM certs to the certificate store
+    win_certificate_store:
+      path: C:\Windows\TEMP\cert_setup\{{ item.name }}.pfx
+      key_exportable: no
+      key_storage: machine
+      password: password
+      state: present
+      store_location: LocalMachine
+      store_name: My
+    register: winrm_cert_info
+    with_items: '{{ certificate_info }}'
+    loop_control:
+      label: '{{ item.name }}'
+
+  # WinRM is frustratingly annoying to create an endpoint over multiple ports without having a separate adapter for
+  # each listener so we just create a dummy loopback adapter for each one.
+  - name: create dummy loopback adapters for WinRM endpoints
+    win_device:
+      path: '%WinDir%\Inf\netloop.inf'
+      hardware_id: '*msloop'
+      name: 'Microsoft KM-TEST Loopback Adapter{{ (item|int == 0) | ternary("", " #" ~ (item + 1)) }}'
+      state: present
+    register: loopback_adapters
+    loop: '{{ range(0, certificate_info | length, 1) | list }}'
+    loop_control:
+      label: '{{ certificate_info[item|int].name }}'
+
+  # The other annoying part is that the WinRM service checks that requests come from the registered address it is
+  # meant to listen on. Because it is set to listen on a local loopback address we forward the external port for WinRM
+  # to the internal port the listener is set to use. This means WinRM thinks the request came over that address when
+  # it actually came from the normal external address.
+  - name: setup WinRM listeners for each certificate and the friendly name of those certs
+    win_shell: |
+      $ErrorActionPreference = 'Stop'
+      $changed = $false
+
+      $externalPort = {{ certificate_info[item|int].port }}
+      $listenerPort = $externalPort + 1
+      $desiredName = "test-$externalPort-{{ certificate_info[item|int].name }}"
+      $thumbprint = '{{ winrm_cert_info.results[item|int].thumbprints[0] }}'
+      $adapterName = '{{ loopback_adapters.results[item|int].name }}'
+
+      # Set the friendly name of the cert so the libmi tests know what endpoints to test with.
+      $cert = Get-Item -LiteralPath "Cert:\LocalMachine\My\$thumbprint"
+      if ($cert.FriendlyName -ne $desiredName) {
+          $cert.FriendlyName = $desiredName
+          $changed = $true
+      }
+
+      # Get the IP address of the loopback adapter. The IP may not be ready yet if it was just created. Just sleep a
+      # few times before trying again.
+      $address = $null
+      while ($true) {
+          $address = Get-NetAdapter -InterfaceDescription $adapterName | Get-NetIPAddress | Where-Object AddressFamily -eq IPv4  
+          if (-not $address.IPAddress) {
+              Start-Sleep -Seconds 1
+          } else {
+              $address = $address.IPAddress
+              break
+          }
+      }
+
+      # See if the listener for the loopback adapter is already set.
+      $listener = Get-ChildItem -Path WSMan:\localhost\Listener |
+          Where-Object { $_.Keys -contains "Transport=HTTPS" } |
+          ForEach-Object -Process {
+              $details = Get-ChildItem -Path $_.PSPath
+              [PSCustomObject]@{
+                  PSPath = $_.PSPath
+                  Address = ($details | Where-Object Name -eq Address).Value
+                  Port = ($details | Where-Object Name -eq Port).Value
+                  CertificateThumbprint = ($details | Where-Object Name -eq CertificateThumbprint).Value
+              }
+          } |
+          Where-Object Port -eq $listenerPort
+
+      # If the listener already exists but is for a different cert or IP then remove it.
+      if ($listener -and ($listener.Address -ne $address -or $listener.CertificateThumbprint -ne $thumbprint)) {
+          Remove-Item -LiteralPath $listener.PSPath -Force -Recurse
+          $listener = $null
+          $changed = $true
+      }
+
+      # Create the listener if required and forward the external port to the internal one.
+      if (-not $listener) {
+          $wsmanParams = @{
+              ResourceURI = 'winrm/config/Listener'
+              SelectorSet = @{
+                  Address = ('IP:{0}' -f $address)
+                  Transport = 'HTTPS'
+              }
+              ValueSet = @{
+                  CertificateThumbprint = $thumbprint
+                  Port = $listenerPort
+              }
+          }
+          $null = New-WSManInstance @wsmanParams
+          $null = netsh interface portproxy add v4tov4 listenaddress={{ ansible_host }} listenport=$externalPort connectaddress=$address connectport=$listenerPort
+
+          $changed = $true
+      }
+
+      $changed
+    register: winrm_listener_setup
+    changed_when: winrm_listener_setup.stdout | trim | bool
+    loop: '{{ range(0, certificate_info | length, 1) | list }}'
+    loop_control:
+      label: '{{ certificate_info[item|int] }}'
+
+  - name: make sure the WinRM HTTPS listener ports are open
+    win_firewall_rule:
+      name: WinRM HTTPS ({{ item.name }} - {{ item.port }})
+      localport: '{{ item.port }}'
+      action: allow
+      direction: in
+      protocol: tcp
+      profiles: domain,private,public
+      state: present
+      enabled: yes
+    with_items: '{{ certificate_info }}'
+    loop_control:
+      label: '{{ item.name }}'
+
+  - name: make sure the CBT level is set to Strict
+    win_shell: |
+      $cbtPath = 'WSMan:\localhost\Service\Auth\CbtHardeningLevel'
+      if ((Get-Item -LiteralPath $cbtPath).Value -ne 'Strict') {
+          Set-Item -LiteralPath $cbtPath -Value Strict
+          $true
+      } else {
+          $false
+      }
+    register: cbt_result
+    changed_when: cbt_result.stdout | trim | bool
+
   - name: get network connection for private adapter
     win_shell: |
       foreach ($instance in (Get-CimInstance -ClassName Win32_NetworkAdapter -Filter "Netenabled='True'")) {

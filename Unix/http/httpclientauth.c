@@ -2422,6 +2422,9 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
     gss_name_t target_name = (gss_name_t) self->targetName;
     gss_OID chosen_mech = NULL;
 
+    // JBOREAN CHANGE: Access channel binding hash through the client.
+    HttpClient *client = (HttpClient *) self->base.data;
+
     if (!pRequestHeader)
     {
         // complain here
@@ -2494,9 +2497,16 @@ HttpClient_NextAuthRequest(_In_ struct _HttpClient_SR_SocketData * self, _In_ co
     // (void)DecodeToken(&input_token);
     if (!skip_step)
     {
+        // JBOREAN CHANGE: Pass along the channel bindings struct if present.
+        gss_channel_bindings_t input_chan_bindings = GSS_C_NO_CHANNEL_BINDINGS;
+        if (client->connector->channelBindingData)
+        {
+            input_chan_bindings = (gss_channel_bindings_t)client->connector->channelBindingData;
+        }
+
         maj_stat = (*_g_gssClientState.Gss_Init_Sec_Context)(&min_stat, self->cred, &context_hdl, target_name, mechset->elements, self->negoFlags,   // flags
                                     0,  // time_req,
-                                    GSS_C_NO_CHANNEL_BINDINGS,  // input_chan_bindings,
+                                    input_chan_bindings,
                                     &input_token, &chosen_mech, /* mech type */
                                     &output_token, &self->negoFlags, NULL);   /* time_rec */
     }
@@ -2682,6 +2692,9 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
 
     gss_buffer_desc output_token;
     gss_OID_set mechset = NULL;
+
+    // JBOREAN CHANGE: Access channel binding hash through the client.
+    HttpClient *client = (HttpClient *) self->base.data;
 
     if (self->authContext)
     {
@@ -3026,9 +3039,16 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
         self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG | GSS_C_DELEG_POLICY_FLAG);
     }
 
+    // JBOREAN CHANGE: Pass along the channel bindings struct if present.
+    gss_channel_bindings_t input_chan_bindings = GSS_C_NO_CHANNEL_BINDINGS;
+    if (client->connector->channelBindingData)
+    {
+        input_chan_bindings = (gss_channel_bindings_t)client->connector->channelBindingData;
+    }
+
     maj_stat = (*_g_gssClientState.Gss_Init_Sec_Context)(&min_stat, cred, &context_hdl, target_name, mechset->elements, self->negoFlags,
                                     0,  // time_req,
-                                    GSS_C_NO_CHANNEL_BINDINGS,  // input_chan_bindings,
+                                    input_chan_bindings,
                                     GSS_C_NO_BUFFER, NULL, &output_token, &self->negoFlags, 0);   // time_req
 
     if (maj_stat == GSS_S_CONTINUE_NEEDED)

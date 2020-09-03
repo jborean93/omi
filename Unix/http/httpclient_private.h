@@ -41,7 +41,11 @@ typedef struct _HttpClient_SR_SocketData {
     /* ssl part */
     SSL *ssl;
     MI_Boolean reverseOperations;   /*reverse read/write Events/Handlers */
-    MI_Boolean connectDone;
+
+    // JBOREAN CHANGE: Added support for channel binding tokens has rearranged the connection method and now needs to
+    // store the TLS channel bindings token.
+    // MI_Boolean connectDone;
+    unsigned char* channelBindingData;
 
     /* receiving data */
      __field_ecount(recvBufferSize) char *recvBuffer;
@@ -88,7 +92,7 @@ typedef struct _HttpClient_SR_SocketData {
     void *authContext;          // gss_context_t
     void *targetName;           // gss_name_t
     void *cred;                 // gss_cred_id_t
-    AuthMechanism selectedMech;    // 
+    AuthMechanism selectedMech;    //
     MI_Uint32 negoFlags;
 
     /* Destination info. We use this in the authorisation transaction */
@@ -100,7 +104,7 @@ typedef struct _HttpClient_SR_SocketData {
     MI_Boolean secure;          // This is an SSL connection (https)
     MI_Boolean isPrivate;         // This connection is to be encrypted
 
-    MI_Char *errMsg;           // Has a error mesisage produced in IsAuthorized or other areas 
+    MI_Char *errMsg;           // Has a error mesisage produced in IsAuthorized or other areas
                                // that have interesting information for CIMerror
 
     /* For the authorisation loop we need to retain the components of the original message */
