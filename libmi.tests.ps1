@@ -1,6 +1,12 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
+Import-Module -Name powershell-yaml
+$Global:Config = ConvertFrom-Yaml -Yaml (Get-Content -LiteralPath $PSScriptRoot/integration_environment/inventory.yml -Raw)
+
+$null = (krb5-config --version) -match 'release\s*(.*)'
+$Global:KrbVersion = [Version]$Matches[1]
+
 $Global:Distribution = 'unknown'
 if (Test-Path -LiteralPath /tmp/distro.txt) {
     $Global:Distribution = (Get-Content -LiteralPath /tmp/distro.txt -Raw).Trim()
@@ -21,16 +27,25 @@ if (Test-Path -LiteralPath $exchangeMetaPath) {
     }
 }
 
-BeforeAll {
-    Import-Module -Name powershell-yaml
-    $config = ConvertFrom-Yaml -Yaml (Get-Content -LiteralPath $PSScriptRoot/integration_environment/inventory.yml -Raw)
+Function Global:Get-TestHostInfo {
+    [CmdletBinding()]
+    param ()
 
-    $domain = $config.all.vars.domain_name
-    $username = '{0}@{1}' -f ($config.all.vars.domain_username, $domain.ToUpper())
-    $password = $config.all.vars.domain_password
-    $credential = [PSCredential]::new($username, (ConvertTo-SecureString -AsPlainText -Force -String $password))
-    $hostname = '{0}.{1}' -f ([string]$config.all.children.windows.hosts.Keys, $domain)
-    $hostnameIP = $config.all.children.windows.hosts.DC01.ansible_host
+    $domain = $Global:Config.all.vars.domain_name
+    $username = '{0}@{1}' -f ($Global:Config.all.vars.domain_username, $domain.ToUpper())
+    $password = $Global:Config.all.vars.domain_password
+    $hostname = '{0}.{1}' -f ([string]$Global:Config.all.children.windows.hosts.Keys, $domain)
+
+    [PSCustomObject]@{  
+        Credential = [PSCredential]::new($Username, (ConvertTo-SecureString -AsPlainText -Force -String $Password))
+        Hostname = $hostname
+        HostnameIP = $Global:Config.all.children.windows.hosts.DC01.ansible_host
+        NetbiosName = $hostname.Split('.')[0].ToUpper()
+    }
+}
+
+BeforeAll {
+    $testHostInfo = Get-TestHostInfo
 
     Function Invoke-Kinit {
         [CmdletBinding()]
@@ -109,14 +124,62 @@ Describe "Checking the compiled library's integrity" {
 }
 
 Describe "PSRemoting through WSMan" {
-    It "Connects over HTTPS - <Authentication>" -TestCases (
+    It "Connects over HTTP with GSSAPI auth - <Authentication>" -TestCases (
         @{ Authentication = 'Negotiate' },
         @{ Authentication = 'Kerberos' }
     ) {
         $invokeParams = @{
-            ComputerName = $hostname
-            Credential = $credential
+            ComputerName = $testHostInfo.Hostname
+            Credential = $testHostInfo.Credential
             Authentication = $Authentication
+            ScriptBlock = { hostname.exe }
+        }
+        $actual = Invoke-Command @invokeParams
+        $actual | Should -Be $testHostInfo.NetbiosName
+    }
+
+    # CentOS 7 does not have a new enough version of GSSAPI to work with NTLM auth.
+    # Debian 8 does not have the gss-ntlmssp package available.
+    It "Connects over HTTP with NTLM auth" -Skip:($Global:Distribution -in @('centos7', 'debian8')) {
+        $invokeParams = @{
+            ComputerName = $testHostInfo.HostnameIP
+            Credential = $testHostInfo.Credential
+            Authentication = 'Negotiate'
+            ScriptBlock = { hostname.exe }
+        }
+        $actual = Invoke-Command @invokeParams
+        $actual | Should -Be $testHostInfo.NetbiosName
+    }
+
+    It "Connects over HTTP with implicit auth - <Authentication>" -TestCases (
+        @{ Authentication = 'Negotiate' },
+        @{ Authentication = 'Kerberos' }
+    ) {
+        $invokeParams = @{
+            ComputerName = $testHostInfo.Hostname
+            Authentication = $Authentication
+            ScriptBlock = { hostname.exe }
+        }
+
+        Invoke-Kinit -Credential $testHostInfo.Credential
+
+        try {
+            $actual = Invoke-Command @invokeParams
+            $actual | Should -Be $testHostInfo.NetbiosName
+        } finally {
+            kdestroy
+        }
+    }
+}
+
+Describe "PSRemoting over HTTPS" {
+    # ChannelBindingToken doesn't work on SPNEGO with MIT krb5 until after 1.18.2. Fedora 32 seems to have backported
+    # further changes into the package which reports 1.18.2 but in reality has the fix so we also check that.
+    It "Connects over HTTPS - Negotiate" -Skip:('fedora32' -ne $Global:Distribution -and $Global:KrbVersion -lt [Version]'1.18.3') {
+        $invokeParams = @{
+            ComputerName = $testHostInfo.Hostname
+            Credential = $testHostInfo.Credential
+            Authentication = 'Negotiate'
             ScriptBlock = { hostname.exe }
             UseSSL = $true
         }
@@ -127,62 +190,89 @@ Describe "PSRemoting through WSMan" {
         }
 
         $actual = Invoke-Command @invokeParams
-        $actual | Should -Be $hostname.Split('.')[0].ToUpper()
+        $actual | Should -Be $testHostInfo.NetbiosName
     }
 
-    It "Connects over HTTP with GSSAPI auth - <Authentication>" -TestCases (
-        @{ Authentication = 'Negotiate' },
-        @{ Authentication = 'Kerberos' }
-    ) {
+    It "Connects over HTTPS with NTLM auth" -Skip:('fedora32' -ne $Global:Distribution -and $Global:KrbVersion -lt [Version]'1.18.3') {
         $invokeParams = @{
-            ComputerName = $hostname
-            Credential = $credential
-            Authentication = $Authentication
-            ScriptBlock = { hostname.exe }
-        }
-        $actual = Invoke-Command @invokeParams
-        $actual | Should -Be $hostname.Split('.')[0].ToUpper()
-    }
-
-    # CentOS 7 does not have a new enough version of GSSAPI to work with NTLM auth.
-    # Debian 8 does not have the gss-ntlmssp package available.
-    It "Connects over HTTP with NTLM auth" -Skip:($Global:Distribution -in @('centos7', 'debian8')) {
-        $invokeParams = @{
-            ComputerName = $hostnameIP
-            Credential = $credential
+            ComputerName = $testHostInfo.HostnameIP
+            Credential = $testHostInfo.Credential
             Authentication = 'Negotiate'
             ScriptBlock = { hostname.exe }
+            UseSSL = $true
         }
+
+        # Debian 8 comes with an older version of pwsh that doesn't have New-PSSessionOption
+        if ((Get-Command -Name New-PSSessionOption -ErrorAction SilentlyContinue)) {
+            $invokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
+        }
+
         $actual = Invoke-Command @invokeParams
-        $actual | Should -Be $hostname.Split('.')[0].ToUpper()
+        $actual | Should -Be $testHostInfo.NetbiosName
     }
 
-    It "Connects over HTTP with implicit auth - <Authentication>" -TestCases (
-        @{ Authentication = 'Negotiate' },
-        @{ Authentication = 'Kerberos' }
-    ) {
+    It "Connects over HTTPS - Kerberos" {
         $invokeParams = @{
-            ComputerName = $hostname
-            Authentication = $Authentication
+            ComputerName = $testHostInfo.Hostname
+            Credential = $testHostInfo.Credential
+            Authentication = 'Kerberos'
             ScriptBlock = { hostname.exe }
+            UseSSL = $true
         }
 
-        Invoke-Kinit -Credential $credential
-
-        try {
-            $actual = Invoke-Command @invokeParams
-            $actual | Should -Be $hostname.Split('.')[0].ToUpper()
-        } finally {
-            kdestroy
+        # Debian 8 comes with an older version of pwsh that doesn't have New-PSSessionOption
+        if ((Get-Command -Name New-PSSessionOption -ErrorAction SilentlyContinue)) {
+            $invokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
         }
+
+        $actual = Invoke-Command @invokeParams
+        $actual | Should -Be $testHostInfo.NetbiosName
+    }
+
+    # We first need to discover the actual HTTPS endpoints we've set up for channel binding token testing to build the
+    # -TestCases array.
+    $testHostInfo = Get-TestHostInfo
+    $cbtParams = @{
+        ComputerName = $testHostInfo.Hostname
+        Credential = $testHostInfo.Credential
+        Authentication = 'Negotiate'
+    }
+    $cbtInfo = Invoke-Command @cbtParams -ScriptBlock {
+        Get-ChildItem -LiteralPath Cert:\LocalMachine\My |
+            Where-Object { $_.FriendlyName.StartsWith('test-') } |
+            ForEach-Object -Process {
+                $dummy, $port, $algorithm = $_.FriendlyName -split '-', 3
+                @{
+                    HashAlgorithm = $algorithm
+                    Port = $port
+                }
+            }
+    }
+    It "ChannelBindingToken works with certficate <HashAlgorithm>" -TestCases $cbtInfo {
+        $invokeParams = @{
+            ComputerName = $testHostInfo.Hostname
+            Credential = $testHostInfo.Credential
+            Authentication = 'Kerberos'
+            ScriptBlock = { hostname.exe }
+            UseSSL = $true
+            Port = $Port
+        }
+
+        # Debian 8 comes with an older version of pwsh that doesn't have New-PSSessionOption
+        if ((Get-Command -Name New-PSSessionOption -ErrorAction SilentlyContinue)) {
+            $invokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
+        }
+
+        $actual = Invoke-Command @invokeParams
+        $actual | Should -Be $testHostInfo.NetbiosName
     }
 }
 
 Describe "Kerberos delegation" {
     It "Connects with defaults - no delegation" {
         $invokeParams = @{
-            ComputerName = $hostname
-            Credential = $credential
+            ComputerName = $testHostInfo.Hostname
+            Credential = $testHostInfo.Credential
             Authentication = 'Negotiate'
             ScriptBlock = { klist.exe }
         }
@@ -196,10 +286,10 @@ Describe "Kerberos delegation" {
         @{ Authentication = 'Negotiate' },
         @{ Authentication = 'Kerberos' }
     ) {
-        Invoke-Kinit -Credential $credential -Forwardable
+        Invoke-Kinit -Credential $testHostInfo.Credential -Forwardable
 
         $invokeParams = @{
-            ComputerName = $hostname
+            ComputerName = $testHostInfo.Hostname
             Authentication = $Authentication
             ScriptBlock = { klist.exe }
         }

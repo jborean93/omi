@@ -15,6 +15,7 @@
     "test_deps": [
         "gss-ntlmssp",
         "krb5-user",
+        "libkrb5-dev",
         "powershell"
     ]
 }
