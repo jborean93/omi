@@ -40,12 +40,36 @@ This means that connecting to a HTTPS endpoint using this library will always va
 
 If you truly want to disable certificate validation then you need to set the following environment variables to `1`:
 
-* `OMI_SKIP_CA_CHECK`: Like `-SkipCACheck` it will not validate the cert has been signed and issued by a authority the client trusts
-* `OMI_SKIP_CN_CHECK`: Like `-SkipCNCheck` it will still validate the CA chain of the cert but it will not verify the hostname matches the cert `CN` or `SAN` entries
++ `OMI_SKIP_CA_CHECK`: Like `-SkipCACheck` it will not validate the cert has been signed and issued by a authority the client trusts
++ `OMI_SKIP_CN_CHECK`: Like `-SkipCNCheck` it will still validate the CA chain of the cert but it will not verify the hostname matches the cert `CN` or `SAN` entries
 
 There is no equivalent for `-SkipRevocationCheck` as there is no revocation checks that occur at this point in time.
 
+While .NET/PowerShell has an easy way to set env vars, the way it is written in .NET on non-Windows platforms is to keep a copy of the env vars being managed specifically for the .NET applications.
+This means running `$env:OMI_SKIP_CA_CHECK = '1'` will only affect applications running in the .NET space and the OMI library will not be able to see that var.
+If you wish to set or unset an env var during runtime you need to use PInvoke to call `setenv` and `unsetenv` like so:
+
+```powershell
+Add-Type -Namespace OMI -Name Environment -MemberDefinition @'
+[DllImport("libc")]
+public static extern void setenv(string name, string value);
+
+[DllImport("libc")]
+public static extern void unsetenv(string name);
+'@
+
+# To disable cert validation
+[OMI.Environment]::setenv('OMI_SKIP_CA_CHECK', '1')
+[OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', '1')
+
+# To re-enable cert validation
+[OMI.Environment]::unsetenv('OMI_SKIP_CA_CHECK')
+[OMI.Environment]::unsetenv('OMI_SKIP_CN_CHECK')
+```
+
+You can also set the var when you start the process, you only need to use the PInvoke process in PowerShell if you wish to set/change/unset one of these vars once the process has started.
 Because this behaviour is set by an environment variable, it is globally set for a process and cannot be adjusted for an individual connection.
+You can turn it off and on during the process using the method above.
 
 ## Future Changes in PowerShell
 

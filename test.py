@@ -53,6 +53,11 @@ def main():
 
         script_steps.append(('Installing test dependency packages', dep_script))
 
+        ca_trust_script = '''cp integration_environment/cert_setup/ca.pem '%s'
+%s
+''' % (distro_details['cert_staging_dir'], distro_details['cert_staging_cmd'])
+        script_steps.append(('Adding CA chain to system trust store', ca_trust_script))
+
         pwsh_deps = '''cat > /tmp/pwsh-requirements.ps1 << EOL
 \$ErrorActionPreference = 'Stop'
 \$ProgressPreference = 'SilentlyContinue'

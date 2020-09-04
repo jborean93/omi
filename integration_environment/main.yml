@@ -16,6 +16,7 @@
     #   algorithm: The public key algorithm to use for the certificate (default: sha256)
     #   subject: Explicit subject to set for the certificate (default is the FQDN of the DC)
     #   self_signed: Whether the host is self signed or signed by a common CA (default: no)
+    #   system_ca: Whether to sign it with the common system CA or use the explicit one (default: yes)
     certificate_base_port: 29900
     certificate_info:
     - test: cbt-sha1
@@ -35,6 +36,8 @@
       self_signed: yes
     - test: verification-bad-cn
       subject: fake-host
+    - test: verification-other-ca
+      system_ca: no
   tags:
   - windows
 

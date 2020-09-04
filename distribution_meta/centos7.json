@@ -22,5 +22,7 @@
         "krb5-workstation",
         "powershell",
         "which"
-    ]
+    ],
+    "cert_staging_dir": "/etc/pki/ca-trust/source/anchors",
+    "cert_staging_cmd": "update-ca-trust extract"
 }

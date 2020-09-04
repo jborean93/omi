@@ -6,6 +6,9 @@
 Add-Type -Namespace OMI -Name Environment -MemberDefinition @'
 [DllImport("libc")]
 public static extern void setenv(string name, string value);
+
+[DllImport("libc")]
+public static extern void unsetenv(string name);
 '@
 
 Import-Module -Name powershell-yaml
@@ -195,6 +198,7 @@ Describe "PSRemoting over HTTPS" {
         $GoodCertPort = ($Global:CertInfo | Where-Object Name -eq 'verification').Port
         $BadCAPort = ($Global:CertInfo | Where-Object Name -eq 'verification-bad-ca').Port
         $BadCNPort = ($Global:CertInfo | Where-Object Name -eq 'verification-bad-cn').Port
+        $ExplicitCertPort = ($Global:CertInfo | Where-Object Name -eq 'verification-other-ca').Port
 
         $CommonInvokeParams = @{
             ComputerName = $Global:TestHostInfo.Hostname
@@ -207,21 +211,21 @@ Describe "PSRemoting over HTTPS" {
             $CommonInvokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
         }
 
-        [OMI.Environment]::setenv('OMI_SKIP_CA_CHECK', '')
-        [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', '')
-        [OMI.Environment]::setenv('SSL_CERT_FILE', [IO.Path]::Combine($PSScriptRoot, 'integration_environment', 'cert_setup', 'ca.pem'))
+        [OMI.Environment]::unsetenv('OMI_SKIP_CA_CHECK')
+        [OMI.Environment]::unsetenv('OMI_SKIP_CN_CHECK')
+        [OMI.Environment]::unsetenv('SSL_CERT_FILE')
     }
 
     AfterEach {
-        [OMI.Environment]::setenv('OMI_SKIP_CA_CHECK', '')
-        [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', '')
-        [OMI.Environment]::setenv('SSL_CERT_FILE', '')
+        [OMI.Environment]::unsetenv('OMI_SKIP_CA_CHECK')
+        [OMI.Environment]::unsetenv('OMI_SKIP_CN_CHECK')
+        [OMI.Environment]::unsetenv('SSL_CERT_FILE')
     }
 
     # ChannelBindingToken doesn't work on SPNEGO with MIT krb5 until after 1.18.2. Fedora 32 seems to have backported
     # further changes into the package which reports 1.18.2 but in reality has the fix so we also check that.
     It "Connects over HTTPS - Negotiate" -Skip:('fedora32' -ne $Global:Distribution -and $Global:KrbVersion -lt [Version]'1.18.3') {
-        $actual = Invoke-Command @CommonInvokeParams -Port $GoodCertPort -Authentication 'Negotiate'
+        $actual = Invoke-Command @CommonInvokeParams -Port $GoodCertPort -Authentication Negotiate
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
@@ -231,12 +235,19 @@ Describe "PSRemoting over HTTPS" {
         $invokeParams.ComputerName = $Global:TestHostInfo.HostnameIP
 
         [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', '1')
-        $actual = Invoke-Command @invokeParams -Port $GoodCertPort -Authentication 'Negotiate'
+        $actual = Invoke-Command @invokeParams -Port $GoodCertPort -Authentication Negotiate
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
     It "Connects over HTTPS - Kerberos" {
-        $actual = Invoke-Command @CommonInvokeParams -Port $GoodCertPort -Authentication 'Kerberos'
+        $actual = Invoke-Command @CommonInvokeParams -Port $GoodCertPort -Authentication Kerberos
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
+    }
+
+    It "Trusts a certificate using the SSL_CERT_FILE env var" {
+        [OMI.Environment]::setenv('SSL_CERT_FILE',
+            [IO.Path]::Combine($PSScriptRoot, 'integration_environment', 'cert_setup', 'ca_explicit.pem'))
+        $actual = Invoke-Command @CommonInvokeParams -Port $ExplicitCertPort -Authentication Kerberos
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
@@ -244,39 +255,114 @@ Describe "PSRemoting over HTTPS" {
         @{ Name = $_.Name; Port = $_.Port }  # TestCases takes a Hashtable not a PSCustomObject
     }
     It "ChannelBindingToken works with certficate - <Name>" -TestCases $cbtInfo {
-        $actual = Invoke-Command @CommonInvokeParams -Port $Port -Authentication 'Kerberos'
+        # Debian 10 seems to fail to verify certs signed with SHA-1, just skip in that case
+        if ('debian10' -eq $Global:Distribution -and $Name -eq 'cbt-sha1') {
+            return
+        }
+        $actual = Invoke-Command @CommonInvokeParams -Port $Port -Authentication Kerberos
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
     # Debian 8 ships with a really old version of OpenSSL that does not offer CN verification.
     $skipCN = 'debian8' -eq $Global:Distribution
-    It "Fails to verify the CN" -Skip:$skipCN {
-
-    }
-
-    It "Fails to verify the CN with CA being skipped" -Skip:$skipCN {
-
+    It "Fails to verify the CN - <Scenario>" -Skip:$skipCN -TestCases @(
+        @{
+            Scenario = 'Default'
+            EnvVars = @{}
+            Expected = '*certificate verify failed*'
+        },
+        @{
+            Scenario = 'Skip CA check'
+            EnvVars = @{ OMI_SKIP_CA_CHECK =  '1' }
+            Expected = '*Certificate hostname verification failed - set OMI_SKIP_CN_CHECK=1 to ignore.*'
+        },
+        @{
+            Scenario = 'OMI_SKIP_CN_CHECK=0'
+            EnvVars = @{ OMI_SKIP_CN_CHECK = '0' }
+            Expected = '*certificate verify failed*'
+        }
+        @{
+            Scenario = 'OMI_SKIP_CN_CHECK=false'
+            EnvVars = @{ OMI_SKIP_CN_CHECK = 'fAlse' }
+            Expected = '*certificate verify failed*'
+        }
+    ) {
+        foreach ($kvp in $EnvVars.GetEnumerator()) {
+            [OMI.Environment]::setenv($kvp.Key, $kvp.Value)
+        }
+        { Invoke-Command @CommonInvokeParams -Port $BadCNPort -Authentication Kerberos } | Should -Throw $Expected
     }
 
     It "Ignores a CN failure with env value '<Value>'" -TestCases @(
         @{ Value = '1' },
-        @{ Value = 'True' }
+        @{ Value = 'trUe' }
     ) -Skip:$skipCN {
         [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', $Value)
-        $actual = Invoke-Command @CommonInvokeParams -Port $BadCNPort -Authentication 'Kerberos'
+        $actual = Invoke-Command @CommonInvokeParams -Port $BadCNPort -Authentication Kerberos
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
-    It "Fails to verify the CA" {
-
+    It "Fails to verify the CA - <Scenario>" -TestCases @(
+        @{
+            Scenario = 'Default'
+            EnvVars = @{}
+        },
+        @{
+            Scenario = 'Skip CN check'
+            EnvVars = @{ OMI_SKIP_CN_CHECK =  '1' }
+        },
+        @{
+            Scenario = 'OMI_SKIP_CA_CHECK=0'
+            EnvVars = @{ OMI_SKIP_CA_CHECK = '0' }
+        }
+        @{
+            Scenario = 'OMI_SKIP_CA_CHECK=false'
+            EnvVars = @{ OMI_SKIP_CA_CHECK = 'faLse' }
+        }
+    ) {
+        foreach ($kvp in $EnvVars.GetEnumerator()) {
+            [OMI.Environment]::setenv($kvp.Key, $kvp.Value)
+        }
+        { Invoke-Command @CommonInvokeParams -Port $BadCAPort -Authentication Kerberos } | Should -Throw '*certificate verify failed*'
     }
 
-    It "Fails to verify the CA with CN being skipped" {
-
+    It "Ignores a CA failure with env value '<Value>'" -TestCases @(
+        @{ Value = '1' },
+        @{ Value = 'truE' }
+    ) {
+        [OMI.Environment]::setenv('OMI_SKIP_CA_CHECK', $Value)
+        $actual = Invoke-Command @CommonInvokeParams -Port $BadCAPort -Authentication Kerberos
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
-    It "Ignores a CA failure" {
+    It "Failed to verify the CA and CN - <Scenario>" -Skip:$skipCN -TestCases @(
+        @{
+            Scenario = 'No skips'
+            EnvVars = @{}
+            Expected = '*certificate verify failed*'
+        },
+        @{
+            Scenario = 'Skip CA check'
+            EnvVars = @{ OMI_SKIP_CA_CHECK = '1' }
+            Expected = '*Certificate hostname verification failed - set OMI_SKIP_CN_CHECK=1 to ignore.*'
+        },
+        @{
+            Scenario = 'Skip CN check'
+            EnvVars = @{ OMI_SKIP_CN_CHECK = '1' }
+            Expected = '*certificate verify failed*'
+        }
+    ) {
+        foreach ($kvp in $EnvVars.GetEnumerator()) {
+            [OMI.Environment]::setenv($kvp.Key, $kvp.Value)
+        }
+        { Invoke-Command @CommonInvokeParams -Port 5986 -Authentication Kerberos } | Should -Throw $Expected
+    }
 
+    It "Ignores a CA and CN failure" {
+        [OMI.Environment]::setenv('OMI_SKIP_CA_CHECK', '1')
+        [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', '1')
+        $actual = Invoke-Command @CommonInvokeParams -Port 5986 -Authentication Kerberos
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 }
 

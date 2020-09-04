@@ -201,7 +201,8 @@ def load_distribution_config(distribution):  # type: (str) -> Dict[str, any]
     with open(os.path.join(OMI_REPO, 'distribution_meta', '%s.json' % distribution), mode='rb') as fd:
         distro_details = json.loads(fd.read().decode('utf-8'))
 
-    required_keys = {'package_manager', 'build_deps', 'microsoft_repo', 'test_deps'}
+    required_keys = {'package_manager', 'build_deps', 'microsoft_repo', 'test_deps', 'cert_staging_dir',
+        'cert_staging_cmd'}
     optional_keys = {'container_image'}
     valid_keys = required_keys.union(optional_keys)
     actual_keys = set(distro_details.keys())

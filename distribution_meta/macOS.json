@@ -9,5 +9,7 @@
     "test_deps": [
         "openssl",
         "cask:powershell"
-    ]
+    ],
+    "cert_staging_dir": "",
+    "cert_staging_cmd": ""
 }

@@ -2,7 +2,7 @@
 
 set -o pipefail -eux
 
-SUBJECT="${1}"
+DEFAULT_SUBJECT="${1}"
 PASSWORD="${2}"
 
 generate () {
@@ -11,6 +11,7 @@ generate () {
     KEY="${3}"
     ALGORITHM="${4}"
     SELF_SIGNED="${5}"
+    CA_NAME="${6}"
     CA_OPTIONS=()
     EXTRA_OPTIONS=()
 
@@ -19,7 +20,7 @@ generate () {
     fi
 
     if [ "${SELF_SIGNED}" = false ]; then
-        CA_OPTIONS=("-CA" "ca.pem" "-CAkey" "ca.key" "-CAcreateserial")
+        CA_OPTIONS=("-CA" "${CA_NAME}.pem" "-CAkey" "${CA_NAME}.key" "-CAcreateserial")
     else
         CA_OPTIONS=("-signkey" "${NAME}.key")
     fi
@@ -36,7 +37,7 @@ extendedKeyUsage = serverAuth
 subjectAltName = DNS:${SUBJECT}
 EOL
 
-    echo "Generating ${KEY} signed cert"
+    echo "Generating ${NAME} signed cert"
     openssl req \
         -new \
         "-${KEY}" \
@@ -73,7 +74,7 @@ EOL
     rm openssl.conf
 }
 
-echo "Generating CA issuer"
+echo "Generating system trusted CA issuer"
 openssl genrsa \
     -aes256 \
     -out ca.key \
@@ -88,6 +89,21 @@ openssl req \
     -subj "/CN=OMI Root" \
     -passin pass:"${PASSWORD}"
 
+echo "Generating untrusted CA issuer"
+openssl genrsa \
+    -aes256 \
+    -out ca_explicit.key \
+    -passout pass:"${PASSWORD}"
+
+openssl req \
+    -new \
+    -x509 \
+    -days 365 \
+    -key ca_explicit.key \
+    -out ca_explicit.pem \
+    -subj "/CN=OMI Root Explicit" \
+    -passin pass:"${PASSWORD}"
+
 {% for info in certificate_info %}
 {% if '-' in info.algorithm | default('sha256') %}
 {% set key = info.algorithm.split('-')[0] %}
@@ -96,7 +112,7 @@ openssl req \
 {% set key = info.algorithm | default('sha256') %}
 {% set algorithm = '""' %}
 {% endif %}
-generate {{ info.test }} {{ ('subject' in info) | ternary(info.subject, '"${SUBJECT}"') }} {{ key }} {{ algorithm }} {{ info.self_signed | default(False) | bool | lower }}
+generate {{ info.test }} {{ ('subject' in info) | ternary(info.subject, '"${DEFAULT_SUBJECT}"') }} {{ key }} {{ algorithm }} {{ info.self_signed | default(False) | bool | lower }} {{ (info.system_ca | default(True)) | ternary("ca", "ca_explicit") }}
 {% endfor %}
 
 touch complete.txt
