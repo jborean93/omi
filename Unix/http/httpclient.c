@@ -1735,16 +1735,9 @@ static MI_Result _CreateSSLContext(
     const char* trustedCertsDir,
     const char* certFile,
     const char* privateKeyFile,
-    SSL_Options sslOptions,
-    // JBOREAN CHANGE: Added the hostname for hostname checking
-    const char* host)
+    SSL_Options sslOptions)
 {
     SSL_CTX *sslContext;
-    // JBOREAN CHANGE: Use an env var to allow a user to specify that TLS certs must be verified.
-    char* sslErrorString = NULL;
-    MI_Boolean skipCACheck = _GetEnvVarBool(SKIP_CA_CHECK);
-    MI_Boolean skipCNCheck = _GetEnvVarBool(SKIP_CN_CHECK);
-    const char* hostnameToVerify = host;
 
     if (CreateSSLContext(&sslContext, sslOptions) != MI_RESULT_OK)
         return MI_RESULT_FAILED;
@@ -1762,7 +1755,8 @@ static MI_Result _CreateSSLContext(
             trace_SSL_BadTrustDir(trustedCertsDir);
         }
         // JBOREAN CHANGE: Instead of only trusting if a custom trust cert dir is set we always trust unless opted out
-        // by the env vars OMI_SKIP_CA_CHECK and OMI_SKIP_CN_CHECK further below.
+        // by the env vars OMI_SKIP_CA_CHECK and OMI_SKIP_CN_CHECK. This also done at the SSL object level so it can
+        // be turned off and on as demanded by client.
         // SSL_CTX_set_verify(sslContext, SSL_VERIFY_PEER, _ctxVerify);
     }
     else
@@ -1771,40 +1765,12 @@ static MI_Result _CreateSSLContext(
         // SSL_CERT_FILE env vars.
         if (!SSL_CTX_set_default_verify_paths(sslContext))
         {
-            sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+            char* sslErrorString = ERR_error_string(ERR_get_error(), NULL);
             LOGE2((ZT("_CreateSSLContext - Failed to set the default verify paths (%s)"), sslErrorString));
             SSL_CTX_free(sslContext);
             sslContext = NULL;
             return MI_RESULT_FAILED;
         }
-    }
-
-    // Hostname verification was only added in OpenSSL 1.0.2 or newer. Debian 8 is the only host that still runs with
-    // an older version so we just need to make sure we document that.
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-    // If end user doesn't want to check the CN, pass in a NULL hostname to the SSL_CTX host param.
-    if (skipCNCheck)
-        hostnameToVerify = NULL;
-
-    X509_VERIFY_PARAM* param = SSL_CTX_get0_param(sslContext);
-    X509_VERIFY_PARAM_set_hostflags(param, HOST_VERIFICATION_FLAGS);
-    if (!X509_VERIFY_PARAM_set1_host(param, hostnameToVerify, 0))
-    {
-        sslErrorString = ERR_error_string(ERR_get_error(), NULL);
-        LOGE2((ZT("_CreateSSLContext - Failed to set hostname verification (%s)"), sslErrorString));
-        SSL_CTX_free(sslContext);
-        sslContext = NULL;
-        return MI_RESULT_FAILED;
-    }
-#endif
-
-    // While not setting SSL_CTX_set_verify() will also disable the hostname check. If only OMI_SKIP_CA_CHECK is set
-    // and OMI_SKIP_CN_CHECK is not, then the hostname will be manually verified after the SSL_connect is done. I
-    // don't know of a way to disable the CA check but still get OpenSSL to verify it. In reality skipping the CA
-    // check breaks the trust of checking the cert anyway so it's mostly a useless option.
-    if (!skipCACheck)
-    {
-        SSL_CTX_set_verify(sslContext, SSL_VERIFY_PEER, _ctxVerify);
     }
 
     /* Check if there is a client certificate file (file containing client authentication
@@ -2105,6 +2071,42 @@ static MI_Result _CreateConnectorSocket(
         }
 
         SSL_set_connect_state(h->ssl);
+
+        // JBOREAN CHANGE: Set the verification options for the SSL object. This is done per SSL object so the env
+        // vars that control the validation logic are applied when the SSL object is created and not just for the
+        // global SSL_CTX object.
+        MI_Boolean skipCACheck = _GetEnvVarBool(SKIP_CA_CHECK);
+        MI_Boolean skipCNCheck = _GetEnvVarBool(SKIP_CN_CHECK);
+        const char* hostnameToVerify = host;
+
+        // Hostname verification was only added in OpenSSL 1.0.2 or newer. Debian 8 is the only host that still runs
+        // with an older version so we just need to make sure we document that.
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+        // If end user doesn't want to check the CN, pass in a NULL hostname to the SSL_CTX host param.
+        if (skipCNCheck)
+            hostnameToVerify = NULL;
+
+        X509_VERIFY_PARAM* param = SSL_get0_param(h->ssl);
+        X509_VERIFY_PARAM_set_hostflags(param, HOST_VERIFICATION_FLAGS);
+        if (!X509_VERIFY_PARAM_set1_host(param, hostnameToVerify, 0))
+        {
+            char* sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+            LOGE2((ZT("_CreateSSLContext - Failed to set hostname verification (%s)"), sslErrorString));
+            SSL_free(h->ssl);
+            PAL_Free(h);
+            Sock_Close(s);
+            return MI_RESULT_FAILED;
+        }
+#endif
+
+        // While not setting SSL_set_verify() will also disable the hostname check. If only OMI_SKIP_CA_CHECK is set
+        // and OMI_SKIP_CN_CHECK is not, then the hostname will be manually verified after the SSL_connect is done. I
+        // don't know of a way to disable the CA check but still get OpenSSL to verify it. In reality skipping the CA
+        // check breaks the trust of checking the cert anyway so it's mostly a useless option.
+        if (!skipCACheck)
+        {
+            SSL_set_verify(h->ssl, SSL_VERIFY_PEER, _ctxVerify);
+        }
     }
 
     /* Watch for read events on the incoming connection */
@@ -2959,8 +2961,7 @@ MI_Result HttpClient_New_Connector2(
         Once_Invoke(&sslInit, SSL_Init_Fn, NULL);
 
         /* create context */
-        // JBOREAN CHANGE: Pass in the hostname for cert verification.
-        r = _CreateSSLContext(client, trusted_certs_dir, cert_file, private_key_file, sslOptions, host);
+        r = _CreateSSLContext(client, trusted_certs_dir, cert_file, private_key_file, sslOptions);
 
         if (r != MI_RESULT_OK)
         {

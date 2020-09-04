@@ -1,8 +1,26 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
+# Setting an env var in .NET doesn't actually change the process env table. For these tests to actually manipulate the
+# verification behaviour we need to use PInvoke and call setenv directory.
+Add-Type -Namespace OMI -Name Environment -MemberDefinition @'
+[DllImport("libc")]
+public static extern void setenv(string name, string value);
+'@
+
 Import-Module -Name powershell-yaml
 $Global:Config = ConvertFrom-Yaml -Yaml (Get-Content -LiteralPath $PSScriptRoot/integration_environment/inventory.yml -Raw)
+
+$domain = $Global:Config.all.vars.domain_name
+$username = '{0}@{1}' -f ($Global:Config.all.vars.domain_username, $domain.ToUpper())
+$password = $Global:Config.all.vars.domain_password
+$hostname = '{0}.{1}' -f ([string]$Global:Config.all.children.windows.hosts.Keys, $domain)
+$Global:TestHostInfo = [PSCustomObject]@{  
+    Credential = [PSCredential]::new($Username, (ConvertTo-SecureString -AsPlainText -Force -String $Password))
+    Hostname = $hostname
+    HostnameIP = $Global:Config.all.children.windows.hosts.DC01.ansible_host
+    NetbiosName = $hostname.Split('.')[0].ToUpper()
+}
 
 $null = (krb5-config --version) -match 'release\s*(.*)'
 $Global:KrbVersion = [Version]$Matches[1]
@@ -27,26 +45,7 @@ if (Test-Path -LiteralPath $exchangeMetaPath) {
     }
 }
 
-Function Global:Get-TestHostInfo {
-    [CmdletBinding()]
-    param ()
-
-    $domain = $Global:Config.all.vars.domain_name
-    $username = '{0}@{1}' -f ($Global:Config.all.vars.domain_username, $domain.ToUpper())
-    $password = $Global:Config.all.vars.domain_password
-    $hostname = '{0}.{1}' -f ([string]$Global:Config.all.children.windows.hosts.Keys, $domain)
-
-    [PSCustomObject]@{  
-        Credential = [PSCredential]::new($Username, (ConvertTo-SecureString -AsPlainText -Force -String $Password))
-        Hostname = $hostname
-        HostnameIP = $Global:Config.all.children.windows.hosts.DC01.ansible_host
-        NetbiosName = $hostname.Split('.')[0].ToUpper()
-    }
-}
-
 BeforeAll {
-    $testHostInfo = Get-TestHostInfo
-
     Function Invoke-Kinit {
         [CmdletBinding()]
         param (
@@ -129,26 +128,26 @@ Describe "PSRemoting through WSMan" {
         @{ Authentication = 'Kerberos' }
     ) {
         $invokeParams = @{
-            ComputerName = $testHostInfo.Hostname
-            Credential = $testHostInfo.Credential
+            ComputerName = $Global:TestHostInfo.Hostname
+            Credential = $Global:TestHostInfo.Credential
             Authentication = $Authentication
             ScriptBlock = { hostname.exe }
         }
         $actual = Invoke-Command @invokeParams
-        $actual | Should -Be $testHostInfo.NetbiosName
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
     # CentOS 7 does not have a new enough version of GSSAPI to work with NTLM auth.
     # Debian 8 does not have the gss-ntlmssp package available.
     It "Connects over HTTP with NTLM auth" -Skip:($Global:Distribution -in @('centos7', 'debian8')) {
         $invokeParams = @{
-            ComputerName = $testHostInfo.HostnameIP
-            Credential = $testHostInfo.Credential
+            ComputerName = $Global:TestHostInfo.HostnameIP
+            Credential = $Global:TestHostInfo.Credential
             Authentication = 'Negotiate'
             ScriptBlock = { hostname.exe }
         }
         $actual = Invoke-Command @invokeParams
-        $actual | Should -Be $testHostInfo.NetbiosName
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
     It "Connects over HTTP with implicit auth - <Authentication>" -TestCases (
@@ -156,16 +155,16 @@ Describe "PSRemoting through WSMan" {
         @{ Authentication = 'Kerberos' }
     ) {
         $invokeParams = @{
-            ComputerName = $testHostInfo.Hostname
+            ComputerName = $Global:TestHostInfo.Hostname
             Authentication = $Authentication
             ScriptBlock = { hostname.exe }
         }
 
-        Invoke-Kinit -Credential $testHostInfo.Credential
+        Invoke-Kinit -Credential $Global:TestHostInfo.Credential
 
         try {
             $actual = Invoke-Command @invokeParams
-            $actual | Should -Be $testHostInfo.NetbiosName
+            $actual | Should -Be $Global:TestHostInfo.NetbiosName
         } finally {
             kdestroy
         }
@@ -173,106 +172,119 @@ Describe "PSRemoting through WSMan" {
 }
 
 Describe "PSRemoting over HTTPS" {
-    # ChannelBindingToken doesn't work on SPNEGO with MIT krb5 until after 1.18.2. Fedora 32 seems to have backported
-    # further changes into the package which reports 1.18.2 but in reality has the fix so we also check that.
-    It "Connects over HTTPS - Negotiate" -Skip:('fedora32' -ne $Global:Distribution -and $Global:KrbVersion -lt [Version]'1.18.3') {
-        $invokeParams = @{
-            ComputerName = $testHostInfo.Hostname
-            Credential = $testHostInfo.Credential
-            Authentication = 'Negotiate'
-            ScriptBlock = { hostname.exe }
-            UseSSL = $true
-        }
-
-        # Debian 8 comes with an older version of pwsh that doesn't have New-PSSessionOption
-        if ((Get-Command -Name New-PSSessionOption -ErrorAction SilentlyContinue)) {
-            $invokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
-        }
-
-        $actual = Invoke-Command @invokeParams
-        $actual | Should -Be $testHostInfo.NetbiosName
-    }
-
-    It "Connects over HTTPS with NTLM auth" -Skip:('fedora32' -ne $Global:Distribution -and $Global:KrbVersion -lt [Version]'1.18.3') {
-        $invokeParams = @{
-            ComputerName = $testHostInfo.HostnameIP
-            Credential = $testHostInfo.Credential
-            Authentication = 'Negotiate'
-            ScriptBlock = { hostname.exe }
-            UseSSL = $true
-        }
-
-        # Debian 8 comes with an older version of pwsh that doesn't have New-PSSessionOption
-        if ((Get-Command -Name New-PSSessionOption -ErrorAction SilentlyContinue)) {
-            $invokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
-        }
-
-        $actual = Invoke-Command @invokeParams
-        $actual | Should -Be $testHostInfo.NetbiosName
-    }
-
-    It "Connects over HTTPS - Kerberos" {
-        $invokeParams = @{
-            ComputerName = $testHostInfo.Hostname
-            Credential = $testHostInfo.Credential
-            Authentication = 'Kerberos'
-            ScriptBlock = { hostname.exe }
-            UseSSL = $true
-        }
-
-        # Debian 8 comes with an older version of pwsh that doesn't have New-PSSessionOption
-        if ((Get-Command -Name New-PSSessionOption -ErrorAction SilentlyContinue)) {
-            $invokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
-        }
-
-        $actual = Invoke-Command @invokeParams
-        $actual | Should -Be $testHostInfo.NetbiosName
-    }
-
-    # We first need to discover the actual HTTPS endpoints we've set up for channel binding token testing to build the
-    # -TestCases array.
-    $testHostInfo = Get-TestHostInfo
-    $cbtParams = @{
-        ComputerName = $testHostInfo.Hostname
-        Credential = $testHostInfo.Credential
+    # We first need to discover the actual HTTPS endpoints we've set up for the channel binding and cert verification
+    # tests
+    $getCertParams = @{
+        ComputerName = $Global:TestHostInfo.Hostname
+        Credential = $Global:TestHostInfo.Credential
         Authentication = 'Negotiate'
     }
-    $cbtInfo = Invoke-Command @cbtParams -ScriptBlock {
+    $Global:CertInfo = Invoke-Command @getCertParams -ScriptBlock {
         Get-ChildItem -LiteralPath Cert:\LocalMachine\My |
-            Where-Object { $_.FriendlyName.StartsWith('test-') } |
+            Where-Object { $_.FriendlyName.StartsWith('test_') } |
             ForEach-Object -Process {
-                $dummy, $port, $algorithm = $_.FriendlyName -split '-', 3
-                @{
-                    HashAlgorithm = $algorithm
+                $dummy, $testName, $port = $_.FriendlyName -split '_', 3
+                [PSCustomObject]@{
+                    Name = $testName
                     Port = $port
                 }
             }
-    }
-    It "ChannelBindingToken works with certficate <HashAlgorithm>" -TestCases $cbtInfo {
-        $invokeParams = @{
-            ComputerName = $testHostInfo.Hostname
-            Credential = $testHostInfo.Credential
-            Authentication = 'Kerberos'
+    } | Select-Object -Property Name, Port
+
+    BeforeEach {
+        $GoodCertPort = ($Global:CertInfo | Where-Object Name -eq 'verification').Port
+        $BadCAPort = ($Global:CertInfo | Where-Object Name -eq 'verification-bad-ca').Port
+        $BadCNPort = ($Global:CertInfo | Where-Object Name -eq 'verification-bad-cn').Port
+
+        $CommonInvokeParams = @{
+            ComputerName = $Global:TestHostInfo.Hostname
+            Credential = $Global:TestHostInfo.Credential
             ScriptBlock = { hostname.exe }
             UseSSL = $true
-            Port = $Port
         }
-
         # Debian 8 comes with an older version of pwsh that doesn't have New-PSSessionOption
         if ((Get-Command -Name New-PSSessionOption -ErrorAction SilentlyContinue)) {
-            $invokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
+            $CommonInvokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
         }
 
-        $actual = Invoke-Command @invokeParams
-        $actual | Should -Be $testHostInfo.NetbiosName
+        [OMI.Environment]::setenv('OMI_SKIP_CA_CHECK', '')
+        [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', '')
+        [OMI.Environment]::setenv('SSL_CERT_FILE', [IO.Path]::Combine($PSScriptRoot, 'integration_environment', 'cert_setup', 'ca.pem'))
+    }
+
+    AfterEach {
+        [OMI.Environment]::setenv('OMI_SKIP_CA_CHECK', '')
+        [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', '')
+        [OMI.Environment]::setenv('SSL_CERT_FILE', '')
+    }
+
+    # ChannelBindingToken doesn't work on SPNEGO with MIT krb5 until after 1.18.2. Fedora 32 seems to have backported
+    # further changes into the package which reports 1.18.2 but in reality has the fix so we also check that.
+    It "Connects over HTTPS - Negotiate" -Skip:('fedora32' -ne $Global:Distribution -and $Global:KrbVersion -lt [Version]'1.18.3') {
+        $actual = Invoke-Command @CommonInvokeParams -Port $GoodCertPort -Authentication 'Negotiate'
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
+    }
+
+    It "Connects over HTTPS with NTLM auth" -Skip:('fedora32' -ne $Global:Distribution -and $Global:KrbVersion -lt [Version]'1.18.3') {
+        # Using an IP address means we break Kerberos auth and fallback to NTLM
+        $invokeParams = $CommonInvokeParams.Clone()
+        $invokeParams.ComputerName = $Global:TestHostInfo.HostnameIP
+
+        [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', '1')
+        $actual = Invoke-Command @invokeParams -Port $GoodCertPort -Authentication 'Negotiate'
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
+    }
+
+    It "Connects over HTTPS - Kerberos" {
+        $actual = Invoke-Command @CommonInvokeParams -Port $GoodCertPort -Authentication 'Kerberos'
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
+    }
+
+    $cbtInfo = $Global:CertInfo | Where-Object Name -Like 'cbt-*' | ForEach-Object {
+        @{ Name = $_.Name; Port = $_.Port }  # TestCases takes a Hashtable not a PSCustomObject
+    }
+    It "ChannelBindingToken works with certficate - <Name>" -TestCases $cbtInfo {
+        $actual = Invoke-Command @CommonInvokeParams -Port $Port -Authentication 'Kerberos'
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
+    }
+
+    # Debian 8 ships with a really old version of OpenSSL that does not offer CN verification.
+    $skipCN = 'debian8' -eq $Global:Distribution
+    It "Fails to verify the CN" -Skip:$skipCN {
+
+    }
+
+    It "Fails to verify the CN with CA being skipped" -Skip:$skipCN {
+
+    }
+
+    It "Ignores a CN failure with env value '<Value>'" -TestCases @(
+        @{ Value = '1' },
+        @{ Value = 'True' }
+    ) -Skip:$skipCN {
+        [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', $Value)
+        $actual = Invoke-Command @CommonInvokeParams -Port $BadCNPort -Authentication 'Kerberos'
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
+    }
+
+    It "Fails to verify the CA" {
+
+    }
+
+    It "Fails to verify the CA with CN being skipped" {
+
+    }
+
+    It "Ignores a CA failure" {
+
     }
 }
 
 Describe "Kerberos delegation" {
     It "Connects with defaults - no delegation" {
         $invokeParams = @{
-            ComputerName = $testHostInfo.Hostname
-            Credential = $testHostInfo.Credential
+            ComputerName = $Global:TestHostInfo.Hostname
+            Credential = $Global:TestHostInfo.Credential
             Authentication = 'Negotiate'
             ScriptBlock = { klist.exe }
         }
@@ -286,10 +298,10 @@ Describe "Kerberos delegation" {
         @{ Authentication = 'Negotiate' },
         @{ Authentication = 'Kerberos' }
     ) {
-        Invoke-Kinit -Credential $testHostInfo.Credential -Forwardable
+        Invoke-Kinit -Credential $Global:TestHostInfo.Credential -Forwardable
 
         $invokeParams = @{
-            ComputerName = $testHostInfo.Hostname
+            ComputerName = $Global:TestHostInfo.Hostname
             Authentication = $Authentication
             ScriptBlock = { klist.exe }
         }

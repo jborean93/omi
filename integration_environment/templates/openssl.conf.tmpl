@@ -1,9 +1,0 @@
-distinguished_name = req_distinguished_name
-
-[req_distinguished_name]
-
-[req]
-basicConstraints = CA:FALSE
-keyUsage = digitalSignature,keyEncipherment
-extendedKeyUsage = serverAuth
-subjectAltName = DNS:{{ inventory_hostname }}.{{ domain_name }}
