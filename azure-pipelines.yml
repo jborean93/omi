@@ -55,7 +55,8 @@ stages:
         }
       errorActionPreference: Stop
       displayName: Make sure the output library can be loaded in PowerShell and returns the version.
-      condition: ne(variables['distribution'], 'centos7')  # Bug on Centos7 causes a failure, need to investigate more later
+      # Bug on Centos7 causes a failure, need to investigate more later
+      condition: and(succeeded(), ne(variables['distribution'], 'centos7'))
 
     - task: PublishPipelineArtifact@1
       inputs:

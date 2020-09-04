@@ -8,6 +8,8 @@ One of the key cornerstones of SSL/TLS connections is the ability to trust/authe
 It does this by checking the following about the X509 certificate presented by the server
 
 + The common name (`CN`) or subject alternate names (`SAN`) match the hostname the client is connecting to
+  + This is not available on the Debian 8 builds due to it using an older OpenSSL build
+  + The hostname checks were added in OpenSSL 1.0.2, if you are compiling this yourself you will not have this feature if you compile against an older version
 + The certificate is issued by an authority that the client trusts
 
 There is also a third check which sees if the certificate or the certificate authority who issued it has been revoked.

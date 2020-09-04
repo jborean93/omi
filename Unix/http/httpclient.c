@@ -184,7 +184,9 @@ static const char* sslstrerror(unsigned long SslError)
 // JBOREAN CHANGE: Constants used for certificate validation
 static const char* SKIP_CA_CHECK = "OMI_SKIP_CA_CHECK";
 static const char* SKIP_CN_CHECK = "OMI_SKIP_CN_CHECK";
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
 static const unsigned long HOST_VERIFICATION_FLAGS = X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS;
+#endif
 
 /*
     NOTE: Initialize the session map
@@ -3360,6 +3362,7 @@ MI_Result HttpClient_StartRequestV2(
             goto Error;
         }
 
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
         // If OMI_SKIP_CA_CHECK was set but not OMI_SKIP_CN_CHECK we need to manually verify the hostname here.
         if (skipCACheck && !skipCNCheck)
         {
@@ -3375,6 +3378,7 @@ MI_Result HttpClient_StartRequestV2(
                 goto Error;
             }
         }
+#endif
 
 #if AUTHORIZATION
         // Getting the CBT data shouldn't warrant a failure so we just ignore a failure for now.
