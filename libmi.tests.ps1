@@ -25,12 +25,17 @@ $Global:TestHostInfo = [PSCustomObject]@{
     NetbiosName = $hostname.Split('.')[0].ToUpper()
 }
 
-$null = (krb5-config --version) -match 'release\s*(.*)'
-$Global:KrbVersion = [Version]$Matches[1]
-
 $Global:Distribution = 'unknown'
 if (Test-Path -LiteralPath /tmp/distro.txt) {
     $Global:Distribution = (Get-Content -LiteralPath /tmp/distro.txt -Raw).Trim()
+}
+
+$krbVersionmatch = (krb5-config --version) -match 'release\s*(.*)'
+$Global:KrbVersion = [Version]'0.0'
+if ($krbVersionMatch) {
+    try {
+        $Global:KrbVersion = [Version]$Matches[1]
+    } catch [System.Management.Automation.PSInvalidCastException] {}
 }
 
 $Global:ExchangeOnline = $null
@@ -142,7 +147,8 @@ Describe "PSRemoting through WSMan" {
 
     # CentOS 7 does not have a new enough version of GSSAPI to work with NTLM auth.
     # Debian 8 does not have the gss-ntlmssp package available.
-    It "Connects over HTTP with NTLM auth" -Skip:($Global:Distribution -in @('centos7', 'debian8')) {
+    # macOS has troubles with NTLM over SPNEGO when it comes to message encryption.
+    It "Connects over HTTP with NTLM auth" -Skip:($Global:Distribution -in @('centos7', 'debian8', 'macOS')) {
         $invokeParams = @{
             ComputerName = $Global:TestHostInfo.HostnameIP
             Credential = $Global:TestHostInfo.Credential
@@ -194,6 +200,13 @@ Describe "PSRemoting over HTTPS" {
             }
     } | Select-Object -Property Name, Port
 
+    # Older OpenSSL versions don't seem to report a verification error but a more generic one
+    if ($Global:Distribution -in @('debian8', 'ubuntu16.04', 'centos7')) {
+        $Global:ExpectedVerificationError = '*error:14090086:SSL routines:func(144):reason(134)*'
+    } else {
+        $Global:ExpectedVerificationError = '*certificate verify failed*'
+    }
+
     BeforeEach {
         $GoodCertPort = ($Global:CertInfo | Where-Object Name -eq 'verification').Port
         $BadCAPort = ($Global:CertInfo | Where-Object Name -eq 'verification-bad-ca').Port
@@ -224,12 +237,13 @@ Describe "PSRemoting over HTTPS" {
 
     # ChannelBindingToken doesn't work on SPNEGO with MIT krb5 until after 1.18.2. Fedora 32 seems to have backported
     # further changes into the package which reports 1.18.2 but in reality has the fix so we also check that.
-    It "Connects over HTTPS - Negotiate" -Skip:('fedora32' -ne $Global:Distribution -and $Global:KrbVersion -lt [Version]'1.18.3') {
+    # macOS uses Heimdal which isn't affected by that bug.
+    It "Connects over HTTPS - Negotiate" -Skip:($Global:Distribution -notin @('fedora32', 'macOS') -and $Global:KrbVersion -lt [Version]'1.18.3') {
         $actual = Invoke-Command @CommonInvokeParams -Port $GoodCertPort -Authentication Negotiate
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
-    It "Connects over HTTPS with NTLM auth" -Skip:('fedora32' -ne $Global:Distribution -and $Global:KrbVersion -lt [Version]'1.18.3') {
+    It "Connects over HTTPS with NTLM auth" -Skip:($Global:Distribution -notin @('fedora32') -and $Global:KrbVersion -lt [Version]'1.18.3') {
         # Using an IP address means we break Kerberos auth and fallback to NTLM
         $invokeParams = $CommonInvokeParams.Clone()
         $invokeParams.ComputerName = $Global:TestHostInfo.HostnameIP
@@ -269,7 +283,7 @@ Describe "PSRemoting over HTTPS" {
         @{
             Scenario = 'Default'
             EnvVars = @{}
-            Expected = '*certificate verify failed*'
+            Expected = $Global:ExpectedVerificationError
         },
         @{
             Scenario = 'Skip CA check'
@@ -279,12 +293,12 @@ Describe "PSRemoting over HTTPS" {
         @{
             Scenario = 'OMI_SKIP_CN_CHECK=0'
             EnvVars = @{ OMI_SKIP_CN_CHECK = '0' }
-            Expected = '*certificate verify failed*'
+            Expected = $Global:ExpectedVerificationError
         }
         @{
             Scenario = 'OMI_SKIP_CN_CHECK=false'
             EnvVars = @{ OMI_SKIP_CN_CHECK = 'fAlse' }
-            Expected = '*certificate verify failed*'
+            Expected = $Global:ExpectedVerificationError
         }
     ) {
         foreach ($kvp in $EnvVars.GetEnumerator()) {
@@ -323,7 +337,7 @@ Describe "PSRemoting over HTTPS" {
         foreach ($kvp in $EnvVars.GetEnumerator()) {
             [OMI.Environment]::setenv($kvp.Key, $kvp.Value)
         }
-        { Invoke-Command @CommonInvokeParams -Port $BadCAPort -Authentication Kerberos } | Should -Throw '*certificate verify failed*'
+        { Invoke-Command @CommonInvokeParams -Port $BadCAPort -Authentication Kerberos } | Should -Throw $Global:ExpectedVerificationError
     }
 
     It "Ignores a CA failure with env value '<Value>'" -TestCases @(
@@ -339,7 +353,7 @@ Describe "PSRemoting over HTTPS" {
         @{
             Scenario = 'No skips'
             EnvVars = @{}
-            Expected = '*certificate verify failed*'
+            Expected = $Global:ExpectedVerificationError
         },
         @{
             Scenario = 'Skip CA check'
@@ -349,7 +363,7 @@ Describe "PSRemoting over HTTPS" {
         @{
             Scenario = 'Skip CN check'
             EnvVars = @{ OMI_SKIP_CN_CHECK = '1' }
-            Expected = '*certificate verify failed*'
+            Expected = $Global:ExpectedVerificationError
         }
     ) {
         foreach ($kvp in $EnvVars.GetEnumerator()) {
@@ -367,7 +381,8 @@ Describe "PSRemoting over HTTPS" {
 }
 
 Describe "Kerberos delegation" {
-    It "Connects with defaults - no delegation" {
+    # macOS comes with Heimdal which by default gets a forwardable ticket
+    It "Connects with defaults - no delegation" -Skip:$($Global:Distribution -eq 'macOS') {
         $invokeParams = @{
             ComputerName = $Global:TestHostInfo.Hostname
             Credential = $Global:TestHostInfo.Credential
@@ -378,6 +393,36 @@ Describe "Kerberos delegation" {
         $actual = $actual -join "`n"
 
         $actual | Should -Not -BeLike "*forwarded*"
+    }
+
+    # Debian 8 and Ubuntu 16.04 don't seem to read the env var config, just skip for now
+    It "Connects with custom krb5.conf with forwardable - <Authentication>" -Skip:$($Global:Distribution -in @('debian8', 'ubuntu16.04')) -TestCases @(
+        @{ Authentication = 'Negotiate' },
+        @{ Authentication = 'Kerberos' }
+    ) {
+        $invokeParams = @{
+            ComputerName = $Global:TestHostInfo.Hostname
+            Credential = $Global:TestHostInfo.Credential
+            Authentication = $Authentication
+            ScriptBlock = { klist.exe }
+        }
+        $tempConfig = [IO.Path]::GetTempFileName()
+        try {
+            Set-Content -LiteralPath $tempConfig -Value @'
+[libdefaults]
+  forwardable = true
+'@
+            
+            $existingConfig = $env:KRB5_CONFIG
+            [OMI.Environment]::setenv('KRB5_CONFIG', "$($tempConfig):$existingConfig")
+            $actual = Invoke-Command @invokeParams
+        } finally {
+            [OMI.Environment]::setenv('KRB5_CONFIG', $existingConfig)
+            Remove-Item -LiteralPath $tempConfig -Force
+        }
+
+        $actual = $actual -join "`n"
+        $actual | Should -BeLike "*forwarded*"
     }
 
     It "Connects with implicit forwardable ticket - <Authentication>" -TestCases @(
