@@ -53,6 +53,11 @@ def main():
 
         script_steps.append(('Installing test dependency packages', dep_script))
 
+        cert_extension = distro_details['cert_extension'] if distro_details['cert_extension'] else 'pem'
+        ca_trust_script = '''cp integration_environment/cert_setup/ca.pem '%s/ca.%s'
+%s''' % (distro_details['cert_staging_dir'], cert_extension, distro_details['cert_staging_cmd'])
+        script_steps.append(('Adding CA chain to system trust store', ca_trust_script))
+
         pwsh_deps = '''cat > /tmp/pwsh-requirements.ps1 << EOL
 \$ErrorActionPreference = 'Stop'
 \$ProgressPreference = 'SilentlyContinue'
@@ -65,8 +70,10 @@ pwsh -NoProfile -NoLogo -File /tmp/pwsh-requirements.ps1'''
         script_steps.append(('Installing Pester 5+ and other PowerShell deps', pwsh_deps))
 
 
+    # On macOS we aren't running as root in a container so this step needs sudo.
+    sudo_prefix = 'sudo ' if distribution == 'macOS' else ''
     copy_script = '''PWSHDIR="$( dirname "$( readlink "$( which pwsh )" )" )"
-/bin/cp Unix/build-%s/lib/libmi.* "${PWSHDIR}/"''' % (distribution)
+%s/bin/cp Unix/build-%s/lib/libmi.* "${PWSHDIR}/"''' % (sudo_prefix, distribution)
     script_steps.append(('Copying libmi.so to the PowerShell directory', copy_script))
 
     pester_script = '''cat > /tmp/pwsh-test.ps1 << EOL
@@ -81,8 +88,7 @@ Import-Module -Name Pester -MinimumVersion 5.0
 Invoke-Pester -Configuration \$configuration
 EOL
 
-echo "%s" > /tmp/distro.txt
-''' % distribution
+echo "%s" > /tmp/distro.txt''' % distribution
     script_steps.append(('Creating Pester test script', pester_script))
 
     script_steps.append(('Getting PowerShell version', 'pwsh -Command \$PSVersionTable'))

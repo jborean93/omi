@@ -9,19 +9,35 @@
   hosts: windows
   gather_facts: no
   vars:
+    # Defines the HTTPS listeners to set up and metadata around the cert that backs it.
+    # The ports used are every 2nd number from the base port, e.g. 29900, 299002, 29904, etc.
+    # The default port (5986) is a self signed certificate that is not trusted at all.
+    #   test: The test name to set as the friendly name prefix of the cert
+    #   algorithm: The public key algorithm to use for the certificate (default: sha256)
+    #   subject: Explicit subject to set for the certificate (default is the FQDN of the DC)
+    #   self_signed: Whether the host is self signed or signed by a common CA (default: no)
+    #   system_ca: Whether to sign it with the common system CA or use the explicit one (default: yes)
+    certificate_base_port: 29900
     certificate_info:
-    - name: sha1
-      port: 29900
-    - name: sha256
-      port: 29902
-    - name: sha256-pss
-      port: 29904
-    - name: sha384
-      port: 29906
-    - name: sha512
-      port: 29908
-    - name: sha512-pss
-      port: 29910
+    - test: cbt-sha1
+      algorithm: sha1
+    - test: cbt-sha256
+      algorithm: sha256
+    - test: cbt-sha256-pss
+      algorithm: sha256-pss
+    - test: cbt-sha384
+      algorithm: sha384
+    - test: cbt-sha512
+      algorithm: sha512
+    - test: cbt-sha512-pss
+      algorithm: sha512-pss
+    - test: verification
+    - test: verification-bad-ca
+      self_signed: yes
+    - test: verification-bad-cn
+      subject: fake-host
+    - test: verification-other-ca
+      system_ca: no
   tags:
   - windows
 
@@ -39,12 +55,6 @@
       mode: '700'
     delegate_to: localhost
 
-  - name: create ssl config file
-    template:
-      src: openssl.conf.tmpl
-      dest: '{{ playbook_dir }}/cert_setup/openssl.conf'
-    delegate_to: localhost
-
   - name: generate CA and WinRM certificates
     shell: ./generate_cert.sh {{ (inventory_hostname ~ "." ~ domain_name) | quote }} password
     args:
@@ -59,7 +69,7 @@
 
   - name: import the WinRM certs to the certificate store
     win_certificate_store:
-      path: C:\Windows\TEMP\cert_setup\{{ item.name }}.pfx
+      path: C:\Windows\TEMP\cert_setup\{{ item.test }}.pfx
       key_exportable: no
       key_storage: machine
       password: password
@@ -69,7 +79,7 @@
     register: winrm_cert_info
     with_items: '{{ certificate_info }}'
     loop_control:
-      label: '{{ item.name }}'
+      label: '{{ item.test }}'
 
   # WinRM is frustratingly annoying to create an endpoint over multiple ports without having a separate adapter for
   # each listener so we just create a dummy loopback adapter for each one.
@@ -82,7 +92,7 @@
     register: loopback_adapters
     loop: '{{ range(0, certificate_info | length, 1) | list }}'
     loop_control:
-      label: '{{ certificate_info[item|int].name }}'
+      label: '{{ certificate_info[item|int].test }}'
 
   # The other annoying part is that the WinRM service checks that requests come from the registered address it is
   # meant to listen on. Because it is set to listen on a local loopback address we forward the external port for WinRM
@@ -93,9 +103,10 @@
       $ErrorActionPreference = 'Stop'
       $changed = $false
 
-      $externalPort = {{ certificate_info[item|int].port }}
+      $basePort = {{ certificate_base_port }}
+      $externalPort = $basePort + ({{ item|int }} * 2)
       $listenerPort = $externalPort + 1
-      $desiredName = "test-$externalPort-{{ certificate_info[item|int].name }}"
+      $desiredName = "test_{{ certificate_info[item|int].test }}_$externalPort"
       $thumbprint = '{{ winrm_cert_info.results[item|int].thumbprints[0] }}'
       $adapterName = '{{ loopback_adapters.results[item|int].name }}'
 
@@ -134,7 +145,7 @@
           Where-Object Port -eq $listenerPort
 
       # If the listener already exists but is for a different cert or IP then remove it.
-      if ($listener -and ($listener.Address -ne $address -or $listener.CertificateThumbprint -ne $thumbprint)) {
+      if ($listener -and ($listener.Address -ne ('IP:{0}' -f $address) -or $listener.CertificateThumbprint -ne $thumbprint)) {
           Remove-Item -LiteralPath $listener.PSPath -Force -Recurse
           $listener = $null
           $changed = $true
@@ -168,17 +179,17 @@
 
   - name: make sure the WinRM HTTPS listener ports are open
     win_firewall_rule:
-      name: WinRM HTTPS ({{ item.name }} - {{ item.port }})
-      localport: '{{ item.port }}'
+      name: WinRM HTTPS ({{ certificate_info[item|int].test }}
+      localport: '{{ certificate_base_port + (item|int * 2) }}'
       action: allow
       direction: in
       protocol: tcp
       profiles: domain,private,public
       state: present
       enabled: yes
-    with_items: '{{ certificate_info }}'
+    loop: '{{ range(0, certificate_info | length, 1) | list }}'
     loop_control:
-      label: '{{ item.name }}'
+      label: '{{ certificate_info[item|int].test }} - {{ certificate_base_port + (item|int * 2) }}'
 
   - name: make sure the CBT level is set to Strict
     win_shell: |

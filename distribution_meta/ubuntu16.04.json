@@ -17,5 +17,8 @@
         "krb5-user",
         "libkrb5-dev",
         "powershell"
-    ]
+    ],
+    "cert_staging_dir": "/usr/local/share/ca-certificates",
+    "cert_staging_cmd": "update-ca-certificates",
+    "cert_extension": "crt"
 }

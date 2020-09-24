@@ -21,6 +21,8 @@
 #ifdef CONFIG_POSIX
 # include <openssl/ssl.h>
 # include <openssl/err.h>
+// JBOREAN CHANGE: Required for hostname verification
+# include <openssl/x509v3.h>
 #endif
 
 #define ENGINE_TYPE 'E'

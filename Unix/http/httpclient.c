@@ -181,6 +181,13 @@ static const char* sslstrerror(unsigned long SslError)
 #endif
 #endif
 
+// JBOREAN CHANGE: Constants used for certificate validation
+static const char* SKIP_CA_CHECK = "OMI_SKIP_CA_CHECK";
+static const char* SKIP_CN_CHECK = "OMI_SKIP_CN_CHECK";
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+static const unsigned long HOST_VERIFICATION_FLAGS = X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS;
+#endif
+
 /*
     NOTE: Initialize the session map
 */
@@ -1709,6 +1716,16 @@ static int _ctxVerify(
     return preverify_ok;
 }
 
+// JBOREAN CHANGE: Common code to check a flag that can be set by an env var.
+/*
+  Check if an environment variable is set and whether it's a truthy (set and not 0 or false) or not.
+*/
+static MI_Boolean _GetEnvVarBool(const char* envVarName)
+{
+    char* envValue = getenv(envVarName);
+    return envValue && !(Strcasecmp(envValue, "0") == 0 || Strcasecmp(envValue, "false") == 0);
+}
+
 /*
  Create an Open SSL context that will be used for secure communication. Set up server and client
  certificate authentication if specified.
@@ -1737,7 +1754,23 @@ static MI_Result _CreateSSLContext(
             LOGE2((ZT("_CreateSSLContext - Cannot set directory containing trusted certificate(s) to %s"), trustedCertsDir));
             trace_SSL_BadTrustDir(trustedCertsDir);
         }
-        SSL_CTX_set_verify(sslContext, SSL_VERIFY_PEER, _ctxVerify);
+        // JBOREAN CHANGE: Instead of only trusting if a custom trust cert dir is set we always trust unless opted out
+        // by the env vars OMI_SKIP_CA_CHECK and OMI_SKIP_CN_CHECK. This also done at the SSL object level so it can
+        // be turned off and on as demanded by client.
+        // SSL_CTX_set_verify(sslContext, SSL_VERIFY_PEER, _ctxVerify);
+    }
+    else
+    {
+        // JBOREAN CHANGE: Actually use the default paths for the host, also respects the SSL_CERT_DIR and
+        // SSL_CERT_FILE env vars.
+        if (!SSL_CTX_set_default_verify_paths(sslContext))
+        {
+            char* sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+            LOGE2((ZT("_CreateSSLContext - Failed to set the default verify paths (%s)"), sslErrorString));
+            SSL_CTX_free(sslContext);
+            sslContext = NULL;
+            return MI_RESULT_FAILED;
+        }
     }
 
     /* Check if there is a client certificate file (file containing client authentication
@@ -1834,10 +1867,10 @@ static MI_Result _CreateSocketAndConnect(
 // JBOREAN CHANGE: Used by _CreateConnectorSocket to create the channel binding token data for GSSAPI.
 #if AUTHORIZATION
 static MI_Result _CreateChannelBindingToken(
-    HttpClient_SR_SocketData* handler)
+    HttpClient_SR_SocketData* handler,
+    X509* certificate)
 {
     MI_Result res = MI_RESULT_OK;
-    X509* certificate = NULL;
     int algoNID;
     const EVP_MD* algoType = NULL;
     unsigned char* certHash = NULL;
@@ -1847,15 +1880,6 @@ static MI_Result _CreateChannelBindingToken(
     int bindingPrefixLength = strlen(bindingPrefix);
     int bindingStructLength = sizeof(struct gss_channel_bindings_struct);
     gss_channel_bindings_t bindings = NULL;
-
-    // TODO: OpenSSL 3.0.0 has deprecated SSL_get_peer_certificate in favour of SSL_get1_peer_certificate.
-    certificate = SSL_get_peer_certificate(handler->ssl);
-    if (!certificate)
-    {
-        LOGE2((ZT("_CreateChannelBindingToken - Failed to get TLS peer certificate - skipping CBT")));
-        res = MI_RESULT_FAILED;
-        goto Done;
-    }
 
     if (!OBJ_find_sigid_algs(X509_get_signature_nid(certificate), &algoNID, NULL))
     {
@@ -1914,11 +1938,6 @@ static MI_Result _CreateChannelBindingToken(
     LOGD2((ZT("_CreateChannelBindingToken - OK exit")));
 
 Done:
-    if (certificate)
-    {
-        X509_free(certificate);
-    }
-
     if (certHash)
     {
         PAL_Free(certHash);
@@ -2052,6 +2071,42 @@ static MI_Result _CreateConnectorSocket(
         }
 
         SSL_set_connect_state(h->ssl);
+
+        // JBOREAN CHANGE: Set the verification options for the SSL object. This is done per SSL object so the env
+        // vars that control the validation logic are applied when the SSL object is created and not just for the
+        // global SSL_CTX object.
+        MI_Boolean skipCACheck = _GetEnvVarBool(SKIP_CA_CHECK);
+        MI_Boolean skipCNCheck = _GetEnvVarBool(SKIP_CN_CHECK);
+        const char* hostnameToVerify = host;
+
+        // Hostname verification was only added in OpenSSL 1.0.2 or newer. Debian 8 is the only host that still runs
+        // with an older version so we just need to make sure we document that.
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+        // If end user doesn't want to check the CN, pass in a NULL hostname to the SSL_CTX host param.
+        if (skipCNCheck)
+            hostnameToVerify = NULL;
+
+        X509_VERIFY_PARAM* param = SSL_get0_param(h->ssl);
+        X509_VERIFY_PARAM_set_hostflags(param, HOST_VERIFICATION_FLAGS);
+        if (!X509_VERIFY_PARAM_set1_host(param, hostnameToVerify, 0))
+        {
+            char* sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+            LOGE2((ZT("_CreateSSLContext - Failed to set hostname verification (%s)"), sslErrorString));
+            SSL_free(h->ssl);
+            PAL_Free(h);
+            Sock_Close(s);
+            return MI_RESULT_FAILED;
+        }
+#endif
+
+        // While not setting SSL_set_verify() will also disable the hostname check. If only OMI_SKIP_CA_CHECK is set
+        // and OMI_SKIP_CN_CHECK is not, then the hostname will be manually verified after the SSL_connect is done. I
+        // don't know of a way to disable the CA check but still get OpenSSL to verify it. In reality skipping the CA
+        // check breaks the trust of checking the cert anyway so it's mostly a useless option.
+        if (!skipCACheck)
+        {
+            SSL_set_verify(h->ssl, SSL_VERIFY_PEER, _ctxVerify);
+        }
     }
 
     /* Watch for read events on the incoming connection */
@@ -3273,13 +3328,19 @@ MI_Result HttpClient_StartRequestV2(
 
     // JBOREAN CHANGE: Make sure the SSL context has been connected so we can get the peer certificate for GSSAPI TLS
     // channel binding token support. This must be done before the authentication header is build.
+    X509* certificate = NULL;
+    int sslError = 0;
+    char* sslErrorString = NULL;
+    MI_Boolean skipCACheck = _GetEnvVarBool(SKIP_CA_CHECK);
+    MI_Boolean skipCNCheck = _GetEnvVarBool(SKIP_CN_CHECK);
+
     if (client->connector->ssl)
     {
         int res = SSL_connect(client->connector->ssl);
         if (res < 1)
         {
-            int sslError = SSL_get_error(client->connector->ssl, res);
-            char* sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+            sslError = SSL_get_error(client->connector->ssl, res);
+            sslErrorString = ERR_error_string(ERR_get_error(), NULL);
             client->connector->errMsg = (MI_Char*)sslErrorString;
             LOGE2((ZT("HttpClient_StartRequestV2 - SSL connect returned OpenSSL error %d (%s)"), sslError, sslErrorString));
 
@@ -3289,10 +3350,43 @@ MI_Result HttpClient_StartRequestV2(
 
         LOGD2((ZT("HttpClient_StartRequestV2 - SSL connect using socket %d returned result: %d, errno: %d (%s)"), client->connector->base.sock, res, errno, strerror(errno)));
 
+        // TODO: OpenSSL 3.0.0 has deprecated SSL_get_peer_certificate in favour of SSL_get1_peer_certificate.
+        certificate = SSL_get_peer_certificate(client->connector->ssl);
+        if (!certificate)
+        {
+            sslError = SSL_get_error(client->connector->ssl, res);
+            sslErrorString = ERR_error_string(ERR_get_error(), NULL);
+            client->connector->errMsg = (MI_Char*)sslErrorString;
+            LOGE2((ZT("HttpClient_StartRequestV2 - Failed to get TLS peer certificate with OpenSSL error %d (%s)"), sslError, sslErrorString));
+
+            r = MI_RESULT_FAILED;
+            goto Error;
+        }
+
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+        // If OMI_SKIP_CA_CHECK was set but not OMI_SKIP_CN_CHECK we need to manually verify the hostname here.
+        if (skipCACheck && !skipCNCheck)
+        {
+            sslError = X509_check_host(certificate, client->connector->hostname, 0, HOST_VERIFICATION_FLAGS, NULL);
+            if (sslError < 1)
+            {
+                const MI_Char* errorMessage = "Certificate hostname verification failed - set OMI_SKIP_CN_CHECK=1 to ignore.";
+                client->connector->errMsg = errorMessage;
+                LOGE2((ZT("HttpClient_StartRequestV2 - %s"), errorMessage));
+                X509_free(certificate);
+
+                r = MI_RESULT_FAILED;
+                goto Error;
+            }
+        }
+#endif
+
 #if AUTHORIZATION
         // Getting the CBT data shouldn't warrant a failure so we just ignore a failure for now.
-        _CreateChannelBindingToken(client->connector);
+        _CreateChannelBindingToken(client->connector, certificate);
 #endif
+
+        X509_free(certificate);
     }
 
     // Get the session cookie from the last response, if available

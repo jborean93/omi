@@ -2,32 +2,49 @@
 
 set -o pipefail -eux
 
-SUBJECT="${1}"
+DEFAULT_SUBJECT="${1}"
 PASSWORD="${2}"
 
 generate () {
-    KEY="${1}"
-    ALGORITHM="${2:-}"
+    NAME="${1}"
+    SUBJECT="${2}"
+    KEY="${3}"
+    ALGORITHM="${4}"
+    SELF_SIGNED="${5}"
+    CA_NAME="${6}"
+    CA_OPTIONS=()
     EXTRA_OPTIONS=()
 
-    if [ -z "${ALGORITHM}" ]; then
-        OUTPUT_PATH="${KEY}"
-
-    else
-        echo "Generating RSASSA-PSS certificate"
-        OUTPUT_PATH="${KEY}-${ALGORITHM}"
+    if [ ! -z "${ALGORITHM}" ]; then
         EXTRA_OPTIONS=("-sigopt" "rsa_padding_mode:${ALGORITHM}")
-
     fi
 
-    echo "Generating ${KEY} signed cert"
+    if [ "${SELF_SIGNED}" = false ]; then
+        CA_OPTIONS=("-CA" "${CA_NAME}.pem" "-CAkey" "${CA_NAME}.key" "-CAcreateserial")
+    else
+        CA_OPTIONS=("-signkey" "${NAME}.key")
+    fi
+
+    cat > openssl.conf << EOL
+distinguished_name = req_distinguished_name
+
+[req_distinguished_name]
+
+[req]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:${SUBJECT}
+EOL
+
+    echo "Generating ${NAME} signed cert"
     openssl req \
         -new \
         "-${KEY}" \
         -subj "/CN=${SUBJECT}" \
         -newkey rsa:2048 \
-        -keyout "${OUTPUT_PATH}.key" \
-        -out "${OUTPUT_PATH}.csr" \
+        -keyout "${NAME}.key" \
+        -out "${NAME}.csr" \
         -config openssl.conf \
         -reqexts req \
         -passin pass:"${PASSWORD}" \
@@ -36,28 +53,28 @@ generate () {
 
     openssl x509 \
         -req \
-        -in "${OUTPUT_PATH}.csr" \
+        -in "${NAME}.csr" \
         -"-${KEY}" \
-        -CA ca.pem \
-        -CAkey ca.key \
-        -CAcreateserial \
-        -out "${OUTPUT_PATH}.pem" \
+        -out "${NAME}.pem" \
         -days 365 \
         -extfile openssl.conf \
         -extensions req \
         -passin pass:"${PASSWORD}" \
-        ${EXTRA_OPTIONS[@]}
+        ${EXTRA_OPTIONS[@]} \
+        ${CA_OPTIONS[@]}
 
     openssl pkcs12 \
         -export \
-        -out "${OUTPUT_PATH}.pfx" \
-        -inkey "${OUTPUT_PATH}.key" \
-        -in "${OUTPUT_PATH}.pem" \
+        -out "${NAME}.pfx" \
+        -inkey "${NAME}.key" \
+        -in "${NAME}.pem" \
         -passin pass:"${PASSWORD}" \
         -passout pass:"${PASSWORD}"
+        
+    rm openssl.conf
 }
 
-echo "Generating CA issuer"
+echo "Generating system trusted CA issuer"
 openssl genrsa \
     -aes256 \
     -out ca.key \
@@ -72,12 +89,30 @@ openssl req \
     -subj "/CN=OMI Root" \
     -passin pass:"${PASSWORD}"
 
+echo "Generating untrusted CA issuer"
+openssl genrsa \
+    -aes256 \
+    -out ca_explicit.key \
+    -passout pass:"${PASSWORD}"
+
+openssl req \
+    -new \
+    -x509 \
+    -days 365 \
+    -key ca_explicit.key \
+    -out ca_explicit.pem \
+    -subj "/CN=OMI Root Explicit" \
+    -passin pass:"${PASSWORD}"
+
 {% for info in certificate_info %}
-{% if '-' in info.name %}
-generate {{ info.name.split('-')[0] }} {{ info.name.split('-')[1] }}
+{% if '-' in info.algorithm | default('sha256') %}
+{% set key = info.algorithm.split('-')[0] %}
+{% set algorithm = info.algorithm.split('-')[1] %}
 {% else %}
-generate {{ info.name }}
+{% set key = info.algorithm | default('sha256') %}
+{% set algorithm = '""' %}
 {% endif %}
+generate {{ info.test }} {{ ('subject' in info) | ternary(info.subject, '"${DEFAULT_SUBJECT}"') }} {{ key }} {{ algorithm }} {{ info.self_signed | default(False) | bool | lower }} {{ (info.system_ca | default(True)) | ternary("ca", "ca_explicit") }}
 {% endfor %}
 
 touch complete.txt

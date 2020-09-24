@@ -15,10 +15,13 @@
     "test_deps": [
         "aur:gss-ntlmssp",
         "aur:powershell-bin",
+        "ca-certificates-utils",
         "docbook-xsl",
         "doxygen",
         "krb5",
         "libwbclient",
         "which"
-    ]
+    ],
+    "cert_staging_dir": "/etc/ca-certificates/trust-source/anchors",
+    "cert_staging_cmd": "update-ca-trust extract"
 }
