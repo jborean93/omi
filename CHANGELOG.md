@@ -3,7 +3,7 @@
 This is the changelog for this fork of OMI.
 It documents the changes in each of the tagged releases
 
-## 1.2.0 - TBD
+## 1.2.0 - 2020-09-25
 
 + Added support for channel binding tokens to work with `Auth/CbtHardeningLevel = Strict`
 + Improved error messages displayed when dealing with OpenSSL errors
