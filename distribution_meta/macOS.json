@@ -3,7 +3,7 @@
     "package_manager": "brew",
     "microsoft_repo": "",
     "build_deps": [
-        "openssl",
+        "openssl@1.1",
         "pkg-config"
     ],
     "test_deps": [
