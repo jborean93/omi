@@ -3,6 +3,10 @@
 This is the changelog for this fork of OMI.
 It documents the changes in each of the tagged releases
 
+## 1.2.1 - 2020-09-26
+
++ Fix build for macOS to link against OpenSSL 1.1 and not 1.0.2
+
 ## 1.2.0 - 2020-09-25
 
 + Added support for channel binding tokens to work with `Auth/CbtHardeningLevel = Strict`
