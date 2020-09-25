@@ -57,6 +57,21 @@ fi'''.format(output_dirname)
     ]
     if args.debug:
         configure_args.append('--enable-debug')
+
+    # macOS on Azure Pipelines has OpenSSL 1.0.2 installed but we want to compile against the OpenSSL version in our
+    # dep list which is openssl@1.1. Because the deps are installed at runtime we need our build script to find that
+    # value and add to our configure args.
+    if distribution == 'macOS':
+        script_steps.append(('Getting OpenSSL locations for macOS',
+            'OPENSSL_PREFIX="$(brew --prefix openssl@1.1)"'))
+
+        configure_args.extend([
+            '--openssl="${OPENSSL_PREFIX}/bin/openssl"',
+            '--opensslcflags="-I${OPENSSL_PREFIX}/include"',
+            '--openssllibs="-L${OPENSSL_PREFIX}/lib -lssl -lcrypto -lz"',
+            '--openssllibdir="${OPENSSL_PREFIX}/lib"',
+        ])
+
     configure_script = build_multiline_command('./configure', configure_args)
 
     script_steps.append(('Running configure', configure_script))
