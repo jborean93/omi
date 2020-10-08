@@ -164,9 +164,8 @@ install_name_tool -change \\
                     if key.startswith('OMI_BUILDVERSION_'):
                         env_vars[key] = value
 
-                shell = distro_details.get('shell', '/bin/bash')
                 docker_run(distro_details['container_image'], '/omi/%s' % os.path.basename(temp_fd.name),
-                    cwd='/omi', env=env_vars, shell=shell)
+                    cwd='/omi', env=env_vars, shell=distro_details['shell'])
 
             else:
                 print("Running build locally")

@@ -143,9 +143,8 @@ pwsh -NoProfile -NoLogo -File /tmp/version-test.ps1''' % args.verify_version))
             temp_fd.flush()
 
             if args.docker:
-                shell = distro_details.get('shell', '/bin/bash')
                 docker_run(distro_details['container_image'], '/omi/%s' % os.path.basename(temp_fd.name),
-                    env={'KRB5_CONFIG': '/omi/krb5.conf'}, interactive=args.interactive, shell=shell)
+                    env={'KRB5_CONFIG': '/omi/krb5.conf'}, interactive=args.interactive, shell=distro_details['shell'])
 
             else:
                 print("Running tests locally")

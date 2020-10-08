@@ -17,6 +17,13 @@ try:
 except ImportError:
     argcomplete = None
 
+SELINUX_ENABLED = False
+try:
+    import selinux
+    SELINUX_ENABLED = selinux.is_selinux_enabled()
+except ImportError:
+    pass
+
 
 OMIVersion = collections.namedtuple('OMIVersion', ['major', 'minor', 'patch'])
 
@@ -225,13 +232,14 @@ def complete_distribution():  # type: () -> List[str]
     return distributions
 
 
-def docker_run(image, script, cwd='/omi', env=None, interactive=False, shell='/bin/bash'):
+def docker_run(image, script, cwd='/omi', env=None, interactive=False, shell=None):
     # type: (str, str, str, Optional[Dict[str, str]], bool) -> None
     """ Runs docker run with the arguments specified. """
+    volume_type = ':Z' if SELINUX_ENABLED else ''
     docker_args = [
         'docker', 'run', '--rm',
         '-w', cwd,
-        '-v', '%s:/omi:Z' % OMI_REPO,
+        '-v', '%s:/omi%s' % (OMI_REPO, volume_type),
     ]
 
     if interactive:
@@ -241,7 +249,7 @@ def docker_run(image, script, cwd='/omi', env=None, interactive=False, shell='/b
         for key, value in env.items():
             docker_args.extend(['-e', '%s=%s' % (key, value)])
 
-    docker_args.extend([image, shell, script])
+    docker_args.extend([image, shell or '/bin/bash', script])
 
     print("Starting docker with: %s" % " ".join(docker_args))
     subprocess.check_call(docker_args)
