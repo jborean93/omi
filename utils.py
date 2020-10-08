@@ -50,6 +50,7 @@ def build_multiline_command(command, extras):  # type: (str, List[str]) -> str
 def build_package_command(package_manager, packages):  # type: (str, List[str]) -> str
     """ Generates a command to install packages for a specific package manager. """
     package_boilerplate = {
+        'apk': 'apk add --no-cache',
         'apt': 'apt-get -q update\nDEBIAN_FRONTEND=noninteractive apt-get -q install -y',
         'dnf': 'dnf install -y -q',
         'brew': 'brew install',
@@ -61,7 +62,48 @@ def build_package_command(package_manager, packages):  # type: (str, List[str]) 
         raise ValueError("Unknown package manager '%s', valid package managers: '%s'"
                          % (package_manager, "', '".join(package_boilerplate.keys())))
 
-    if package_manager == 'brew':
+    if package_manager == 'apk':
+        apk_packages = set()
+        source_packages = set()
+
+        for package in packages:
+            if package.startswith('source:'):
+                source_packages.add(package[7:])
+
+            else:
+                apk_packages.add(package)
+
+        package_command = build_multiline_command(package_boilerplate[package_manager], apk_packages)
+
+        if 'gss-ntlmssp' in source_packages:
+            # for autoreconf
+            # sed -i -e 's/v[[:digit:]]\..*\//edge\//g' /etc/apk/repositories
+            package_command += '''\n
+echo "Install gss-ntlmssp"
+git clone https://github.com/gssapi/gss-ntlmssp.git /tmp/gss-ntlmssp
+oldpath="$( pwd )" 
+cd /tmp/gss-ntlmssp
+autoreconf -f -i
+./configure \\
+    --with-manpages=no \\
+    --disable-nls
+make && make install
+cd "${oldpath}"
+rm -rf /tmp/gss-ntlmssp
+
+mkdir -p /etc/gss/mech.d
+echo "gssntlmssp_v1    1.3.6.1.4.1.311.2.2.10    /usr/local/lib/gssntlmssp/gssntlmssp.so" > /etc/gss/mech.d/ntlm.conf'''
+
+        if 'powershell' in source_packages:
+            package_command += '''\n
+echo "Installing Powershell"
+curl -L https://github.com/PowerShell/PowerShell/releases/download/v7.0.3/powershell-7.0.3-linux-alpine-x64.tar.gz -o /tmp/powershell.tar.gz
+mkdir -p /opt/microsoft/powershell/7
+tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7
+chmod +x /opt/microsoft/powershell/7/pwsh
+ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh'''
+
+    elif package_manager == 'brew':
         brew_packages = []
         cask_packages = []
 
@@ -140,7 +182,10 @@ done''' % "' '".join(aur_packages)
 
 def build_package_repo_command(package_manager, repository):  # type: (str, str) -> str
     """ Generates a command to install a package repo for a specific package manager. """
-    if package_manager == 'apt':
+    if package_manager == 'apk':
+        return 'echo "Not applicable on Alpine"'
+
+    elif package_manager == 'apt':
         command = build_package_command('apt', ['apt-transport-https', 'wget'])
         command += '''
 wget -q -O repo.deb %s
@@ -180,7 +225,7 @@ def complete_distribution():  # type: () -> List[str]
     return distributions
 
 
-def docker_run(image, script, cwd='/omi', env=None, interactive=False):
+def docker_run(image, script, cwd='/omi', env=None, interactive=False, shell='/bin/bash'):
     # type: (str, str, str, Optional[Dict[str, str]], bool) -> None
     """ Runs docker run with the arguments specified. """
     docker_args = [
@@ -196,7 +241,7 @@ def docker_run(image, script, cwd='/omi', env=None, interactive=False):
         for key, value in env.items():
             docker_args.extend(['-e', '%s=%s' % (key, value)])
 
-    docker_args.extend([image, '/bin/bash', script])
+    docker_args.extend([image, shell, script])
 
     print("Starting docker with: %s" % " ".join(docker_args))
     subprocess.check_call(docker_args)
@@ -231,7 +276,7 @@ def load_distribution_config(distribution):  # type: (str) -> Dict[str, any]
 
     required_keys = {'package_manager', 'build_deps', 'microsoft_repo', 'test_deps', 'cert_staging_dir',
         'cert_staging_cmd'}
-    optional_keys = {'container_image', 'cert_extension'}
+    optional_keys = {'container_image', 'cert_extension', 'shell'}
     valid_keys = required_keys.union(optional_keys)
     actual_keys = set(distro_details.keys())
 

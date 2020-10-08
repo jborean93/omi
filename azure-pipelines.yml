@@ -36,6 +36,8 @@ stages:
           distribution: ubuntu18.04
         Archlinux:
           distribution: archlinux
+        Alpine3:
+          distribution: alpine3
 
     steps:
     - script: ./build.py $(distribution) --docker

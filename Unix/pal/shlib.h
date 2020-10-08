@@ -18,7 +18,9 @@
 # include <dlfcn.h>
 #endif
 
-#if defined(linux)
+// JBOREAN CHANGE: alpine uses musl which is Linux but doesn't have RTLD_DEEPBIND
+//#if defined(linux)
+#if defined(RTLD_DEEPBIND)
 # define PAL_DLOPEN_FLAGS (RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND)
 #else
 # define PAL_DLOPEN_FLAGS (RTLD_NOW | RTLD_LOCAL)

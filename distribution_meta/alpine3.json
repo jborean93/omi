@@ -1,0 +1,37 @@
+{
+    "container_image": "alpine:3",
+    "package_manager": "apk",
+    "microsoft_repo": "",
+    "shell": "/bin/sh",
+    "build_deps": [
+        "build-base",
+        "krb5-dev",
+        "linux-pam-dev",
+        "make",
+        "openssl",
+        "openssl-dev",
+        "pkgconf"
+    ],
+    "test_deps": [
+        "source:gss-ntlmssp",
+        "source:powershell",
+        "ca-certificates",
+        "autoconf",
+        "automake",
+        "build-base",
+        "curl",
+        "git",
+        "icu-libs",
+        "krb5",
+        "krb5-dev",
+        "libtool",
+        "libunistring-dev",
+        "make",
+        "openssl-dev",
+        "samba-dev",
+        "zlib-dev"
+    ],
+    "cert_staging_dir": "/usr/local/share/ca-certificates",
+    "cert_staging_cmd": "update-ca-certificates",
+    "cert_extension": "crt"
+}
