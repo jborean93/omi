@@ -1,0 +1,13 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 4cc86d1..8aa114b 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -63,7 +63,7 @@ link_directories("${OMI_OUTPUT}/lib" "${OPENSSL_LIBRARIES}")
+ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+ 	# OMI requires 'macos' to be defined if we are building on 
+ 	# this platform
+-	add_definitions(-Dmacos)
++	add_definitions(-Dis_macos)
+ 
+ 	# cannot just find iconv library on osx so 
+ 	# set this up manually

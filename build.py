@@ -37,7 +37,7 @@ def main():
     if args.docker and not distro_details['container_image']:
         raise ValueError("Cannot run --docker on %s as no container_image has been specified" % distribution)
 
-    script_steps = []
+    script_steps = [('Getting current directory path', 'OMI_REPO="$( pwd )"')]
     output_dirname = 'build-%s' % distribution
 
     if not args.skip_deps:
@@ -46,10 +46,11 @@ def main():
 
     # Do this in the container as selinux could have these folders be under root
     if not args.skip_clear:
-        rm_script = '''if [ -d "{0}" ]; then
+        rm_script = '''cd Unix
+if [ -d "{0}" ]; then
     rm -rf "{0}"
 fi'''.format(output_dirname)
-        script_steps.append(('Clearing build folder', rm_script))
+        script_steps.append(('Entering OMI source folder and cleaning any existing build', rm_script))
 
     configure_args = [
         '--outputdirname="%s"' % output_dirname,
@@ -77,6 +78,37 @@ fi'''.format(output_dirname)
     script_steps.append(('Running configure', configure_script))
     script_steps.append(('Running make', 'make'))
 
+    script_steps.append(('Cloning upstream psl-omi-provider repo',
+        '''if [ -d "{0}" ]; then
+    rm -rf "{0}"
+fi
+git clone https://github.com/PowerShell/psl-omi-provider.git "{0}"
+cd "{0}"'''.format('/tmp/psl-omi-provider')))
+
+    psl_patches = [p for p in os.listdir(os.path.join(OMI_REPO, 'psl-omi-provider')) if p.endswith('.diff')]
+    script_steps.append(('Applying psl-omi-provider patches',
+        '\n'.join(['git apply "${OMI_REPO}/psl-omi-provider/%s"' % p for p in psl_patches])))
+
+    built_type = 'Debug' if args.debug else 'Release'
+    library_extension = 'dylib' if distribution == 'macOS' else 'so'
+    script_steps.append(('Building libpsrpclient', '''rm -rf omi
+ln -s "${{OMI_REPO}}" .
+
+if [ -f omi/Unix/output ]; then
+    rm omi/Unix/output
+fi
+ln -s {0} omi/Unix/output
+cd src
+cmake -DCMAKE_BUILD_TYPE={1} .
+make psrpclient
+cp libpsrpclient.{2} "${{OMI_REPO}}/Unix/{0}/lib/"'''.format(output_dirname, built_type, library_extension)))
+
+    if distribution == 'macOS':
+        script_steps.append(('Patch libmi dylib path for libpsrpclient', '''install_name_tool -change \\
+    '{0}/lib/libmi.dylib' \\
+    '@executable_path/libmi.dylib' \\
+    "${{OMI_REPO}}/Unix/{1}/lib/libpsrpclient.dylib"'''.format(args.prefix, output_dirname)))
+
     build_script = build_bash_script(script_steps)
 
     if args.output_script:
@@ -97,13 +129,13 @@ fi'''.format(output_dirname)
                         env_vars[key] = value
 
                 docker_run(distro_details['container_image'], '/omi/%s' % os.path.basename(temp_fd.name),
-                    cwd='/omi/Unix', env=env_vars)
+                    cwd='/omi', env=env_vars)
 
             else:
                 print("Running build locally")
-                subprocess.check_call(['bash', temp_fd.name], cwd=configure_dir)
+                subprocess.check_call(['bash', temp_fd.name], cwd=OMI_REPO)
 
-            libmi_path = os.path.join(build_dir, 'lib', 'libmi.dylib' if distribution == 'macOS' else 'libmi.so')
+            libmi_path = os.path.join(build_dir, 'lib', 'libmi.%s' % library_extension)
             print("Library has been successfully build at '%s'" % libmi_path)
 
 

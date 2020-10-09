@@ -5,7 +5,7 @@ It documents the changes in each of the tagged releases
 
 ## 1.3.0 - TBD
 
-+ Placeholder
++ Build `libpsrpclient` as well and add it to the release artifacts
 
 ## 1.2.1 - 2020-09-26
 
