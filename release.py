@@ -10,6 +10,8 @@ __metaclass__ = type
 import argparse
 import os
 import os.path
+import shutil
+import tarfile
 
 from utils import (
     argcomplete,
@@ -35,22 +37,21 @@ def main():
 
     elif args.pipeline_artifacts:
         # This renames the Azure DevOps pipeline files to the format desired for a GitHub release asset
-        for name in os.listdir(args.pipeline_artifacts):
-            if not name.endswith('-libmi'):
+        for distribution in os.listdir(args.pipeline_artifacts):
+            artifact_dir = os.path.join(args.pipeline_artifacts, distribution)
+
+            if distribution.startswith('.') or not os.path.isdir(artifact_dir):
                 continue
 
-            artifact_dir = os.path.join(args.pipeline_artifacts, name)
+            print("Creating '%s.tar.gz'" % artifact_dir)
+            with tarfile.open('%s.tar.gz' % artifact_dir, 'w:gz') as tar:
+                for lib_name in os.listdir(artifact_dir):
+                    if lib_name == '.':
+                        continue
+                    print("\tAdding '%s' to tar" % lib_name)
+                    tar.add(os.path.join(artifact_dir, lib_name), arcname=lib_name)
 
-            distribution = name.rstrip('-libmi')
-            lib_name = os.listdir(artifact_dir)[0]
-            lib_ext = os.path.splitext(lib_name)[-1]
-
-            src_path = os.path.join(artifact_dir, lib_name)
-            dest_path = os.path.join(args.pipeline_artifacts, 'libmi-%s%s' % (distribution, lib_ext))
-
-            print("Renaming '%s' -> '%s'" % (src_path, dest_path))
-            os.rename(src_path, dest_path)
-            os.rmdir(artifact_dir)
+            shutil.rmtree(artifact_dir)
 
 
 def parse_args():

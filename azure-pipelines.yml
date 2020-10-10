@@ -60,15 +60,9 @@ stages:
 
     - task: PublishPipelineArtifact@1
       inputs:
-        targetPath: Unix/build-$(distribution)/lib/
+        targetPath: Unix/build-$(distribution)/pwsh/
         artifactName: $(distribution)
-      displayName: Publish libmi
-
-    - task: PublishPipelineArtifact@1
-      inputs:
-        targetPath: Unix/build-$(distribution)/lib/libpsrpclient.so
-        artifactName: $(distribution)-libpsrpclient
-      displayName: Publish libpsrpclient
+      displayName: Publish artifacts
 
   - job: macOS
     pool:
@@ -95,15 +89,9 @@ stages:
 
     - task: PublishPipelineArtifact@1
       inputs:
-        targetPath: Unix/build-macOS/lib/
+        targetPath: Unix/build-macOS/pwsh/
         artifactName: macOS
-      displayName: Publish libmi
-
-    - task: PublishPipelineArtifact@1
-      inputs:
-        targetPath: Unix/build-macOS/lib/libpsrpclient.dylib
-        artifactName: macOS-libpsrpclient
-      displayName: Publish libpsrpclient
+      displayName: Publish artifacts
 
 - stage: Publish
   jobs:

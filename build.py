@@ -40,6 +40,7 @@ def main():
 
     script_steps = [('Getting current directory path', 'OMI_REPO="$( pwd )"')]
     output_dirname = 'build-%s' % distribution
+    library_extension = 'dylib' if distribution == 'macOS' else 'so'
 
     if not args.skip_deps:
         dep_script = build_package_command(distro_details['package_manager'], distro_details['build_deps'])
@@ -78,6 +79,8 @@ fi'''.format(output_dirname)
 
     script_steps.append(('Running configure', configure_script))
     script_steps.append(('Running make', 'make'))
+    script_steps.append(('Copying libmi to pwsh build dir',
+        'cp {0}/lib/libmi.{1} {0}/pwsh/'.format(output_dirname, library_extension)))
 
     script_steps.append(('Cloning upstream psl-omi-provider repo',
         '''if [ -d "{0}" ]; then
@@ -95,7 +98,6 @@ cd "{0}"'''.format('/tmp/psl-omi-provider')))
         '\n'.join(['git apply "${OMI_REPO}/psl-omi-provider/%s"' % p for p in psl_patches])))
 
     built_type = 'Debug' if args.debug else 'Release'
-    library_extension = 'dylib' if distribution == 'macOS' else 'so'
     script_steps.append(('Building libpsrpclient', '''rm -rf omi
 ln -s "${{OMI_REPO}}" omi
 
@@ -107,7 +109,7 @@ ln -s {0} omi/Unix/output
 cd src
 cmake -DCMAKE_BUILD_TYPE={1} .
 make psrpclient
-cp libpsrpclient.{2} "${{OMI_REPO}}/Unix/{0}/lib/"'''.format(output_dirname, built_type, library_extension)))
+cp libpsrpclient.{2} "${{OMI_REPO}}/Unix/{0}/pwsh/"'''.format(output_dirname, built_type, library_extension)))
 
     if distribution == 'macOS':
         script_steps.append(('Patch libmi dylib path for libpsrpclient', '''install_name_tool -change \\
@@ -141,8 +143,8 @@ cp libpsrpclient.{2} "${{OMI_REPO}}/Unix/{0}/lib/"'''.format(output_dirname, bui
                 print("Running build locally")
                 subprocess.check_call(['bash', temp_fd.name], cwd=OMI_REPO)
 
-            libmi_path = os.path.join(build_dir, 'lib', 'libmi.%s' % library_extension)
-            print("Library has been successfully build at '%s'" % libmi_path)
+            libmi_path = os.path.join(build_dir, 'pwsh')
+            print("Successfully build\n\t{0}/libmi.{1}\n\t{0}/libpsrpclient.{1}".format(libmi_path, library_extension))
 
 
 def parse_args():
