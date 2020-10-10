@@ -80,7 +80,11 @@ fi'''.format(output_dirname)
     script_steps.append(('Running configure', configure_script))
     script_steps.append(('Running make', 'make'))
     script_steps.append(('Copying libmi to pwsh build dir',
-        'cp {0}/lib/libmi.{1} {0}/pwsh/'.format(output_dirname, library_extension)))
+        '''if [ -d '{0}/pwsh' ]; then
+    rm -rf '{0}/pwsh'
+fi
+mkdir '{0}/pwsh'
+cp '{0}/lib/libmi.{1}' '{0}/pwsh/\''''.format(output_dirname, library_extension)))
 
     script_steps.append(('Cloning upstream psl-omi-provider repo',
         '''if [ -d "{0}" ]; then
