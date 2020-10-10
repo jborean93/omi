@@ -61,13 +61,13 @@ stages:
     - task: PublishPipelineArtifact@1
       inputs:
         targetPath: Unix/build-$(distribution)/lib/libmi.so
-        artifactName: $(distribution)-libmi
+        artifactName: $(distribution)
       displayName: Publish libmi
 
     - task: PublishPipelineArtifact@1
       inputs:
         targetPath: Unix/build-$(distribution)/lib/libpsrpclient.so
-        artifactName: $(distribution)-libpsrpclient
+        artifactName: $(distribution)
       displayName: Publish libpsrpclient
 
   - job: macOS
@@ -95,14 +95,14 @@ stages:
 
     - task: PublishPipelineArtifact@1
       inputs:
-        targetPath: Unix/build-macOS/lib/libmi.so
-        artifactName: macOS-libmi
+        targetPath: Unix/build-macOS/lib/libmi.dylib
+        artifactName: macOS
       displayName: Publish libmi
 
     - task: PublishPipelineArtifact@1
       inputs:
-        targetPath: Unix/build-macOS/lib/libpsrpclient.so
-        artifactName: macOS-libpsrpclient
+        targetPath: Unix/build-macOS/lib/libpsrpclient.dylib
+        artifactName: macOS
       displayName: Publish libpsrpclient
 
 - stage: Publish
