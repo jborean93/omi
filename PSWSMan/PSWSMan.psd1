@@ -1,0 +1,30 @@
+@{
+    # Generated dynamically from omi.version
+    ModuleVersion = '0.0.0'
+    RootModule = 'PSWsman'
+    GUID = '92ec96bf-3ff4-41b2-8694-cd3ee636d3fd'
+    Author = 'Jordan Borean'
+    Copyright = 'Copyright (c) 2020 by Jordan Borean'
+    Description = "Module to install and manage the forked WSMan client libraries for Linux and macOS.`nSee https://github.com/jborean93/omi for more details."
+    PowerShellVersion = '6'
+    CompatiblePSEditions = 'Core'
+    FunctionsToExport = @(
+        'Disable-WSManCertVerification',
+        'Enable-WSManCertVerification',
+        'Install-WSMan'
+    )
+    PrivateData = @{
+        PSData = @{
+            Tags = @(
+                'PSEdition_Core',
+                'Linux',
+                'MacOS',
+                'WSMan',
+                'WinRM'
+            )
+            LicenseUri = 'https://github.com/jborean93/omi/blob/master/LICENSE'
+            ProjectUri = 'https://github.com/jborean93/omi'
+            ReleaseNotes = 'See https://github.com/jborean93/omi/blob/master/CHANGELOG.md'
+        }
+    }
+}

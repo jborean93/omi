@@ -73,8 +73,8 @@ pwsh -NoProfile -NoLogo -File /tmp/pwsh-requirements.ps1'''
     # On macOS we aren't running as root in a container so this step needs sudo.
     sudo_prefix = 'sudo ' if distribution == 'macOS' else ''
     copy_script = '''PWSHDIR="$( dirname "$( readlink "$( which pwsh )" )" )"
-%s/bin/cp Unix/build-%s/lib/libmi.* "${PWSHDIR}/"''' % (sudo_prefix, distribution)
-    script_steps.append(('Copying libmi.so to the PowerShell directory', copy_script))
+%s/bin/cp Unix/build-%s/pwsh/* "${PWSHDIR}/"''' % (sudo_prefix, distribution)
+    script_steps.append(('Copying lib artifacts to the PowerShell directory', copy_script))
 
     pester_script = '''cat > /tmp/pwsh-test.ps1 << EOL
 \$ErrorActionPreference = 'Stop'
@@ -92,11 +92,14 @@ echo "%s" > /tmp/distro.txt''' % distribution
     script_steps.append(('Creating Pester test script', pester_script))
 
     script_steps.append(('Getting PowerShell version', 'pwsh -Command \$PSVersionTable'))
+    script_steps.append(('Getting libmi version', 'pwsh -File tools/Get-OmiVersion.ps1'))
 
     if distribution == 'macOS':
+        script_steps.append(('Output libpsrpclient libraries', 'otool -L "${PWSHDIR}/libpsrpclient.dylib"'))
         script_steps.append(('Output libmi libraries', 'otool -L "${PWSHDIR}/libmi.dylib"'))
 
     else:
+        script_steps.append(('Output libpsrpclient libraries', 'ldd "${PWSHDIR}/libpsrpclient.so"'))
         script_steps.append(('Output libmi libraries', 'ldd "${PWSHDIR}/libmi.so"'))
 
     if args.interactive:

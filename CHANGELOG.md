@@ -3,7 +3,13 @@
 This is the changelog for this fork of OMI.
 It documents the changes in each of the tagged releases
 
-## 1.3.0 - TBD
+## 2.0.0 - TBD
+
+### Breaking Changes
+
++ GitHub release artifacts are now a `.tar.gz` for each distribution containing `libmi` and `libpsrp`
+
+### Changes
 
 + Build `libpsrpclient` as well and add it to the release artifacts
 

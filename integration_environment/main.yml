@@ -385,7 +385,7 @@
         artifact_details: >-
           {{
               artifact_details | default([]) + [{
-                  "distribution": azure_artifacts.json.value[item | int].name.split('-')[0],
+                  "distribution": azure_artifacts.json.value[item | int].name,
                   "url": azure_artifacts.json.value[item | int].resource.downloadUrl
               }]
           }}
@@ -402,12 +402,12 @@
 
     - name: make sure the lib directory exists
       file:
-        path: ~/omi/Unix/build-{{ item.distribution }}/lib
+        path: ~/omi/Unix/build-{{ item.distribution }}/pwsh
         state: directory
       become: no
       loop: '{{ artifact_details }}'
 
     - name: extract .so from zip
-      command: unzip -oj ~/omi/ci-{{ item.distribution }}.zip {{ item.distribution }}-libmi/libmi.* -d ~/omi/Unix/build-{{ item.distribution }}/lib
+      command: unzip -oj ~/omi/ci-{{ item.distribution }}.zip {{ item.distribution }}/lib*.* -d ~/omi/Unix/build-{{ item.distribution }}/pwsh
       become: no
       loop: '{{ artifact_details }}'
