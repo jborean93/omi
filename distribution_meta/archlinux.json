@@ -3,7 +3,10 @@
     "package_manager": "pacman",
     "microsoft_repo": "",
     "build_deps": [
+        "cmake",
         "gcc",
+        "git",
+        "glibc",
         "inetutils",
         "krb5",
         "lsb-release",

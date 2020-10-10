@@ -4,8 +4,10 @@
     "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
     "build_deps": [
         "bind-utils",
+        "cmake",
         "gcc",
         "gcc-c++",
+        "git",
         "krb5-devel",
         "make",
         "openssl",

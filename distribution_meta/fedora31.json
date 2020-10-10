@@ -3,9 +3,11 @@
     "package_manager": "dnf",
     "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
     "build_deps": [
+        "cmake",
         "bind-utils",
         "gcc",
         "gcc-c++",
+        "git",
         "krb5-devel",
         "make",
         "openssl",

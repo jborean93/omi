@@ -1,0 +1,13 @@
+diff --git a/src/Client.c b/src/Client.c
+index 81480c2..3fc8805 100644
+--- a/src/Client.c
++++ b/src/Client.c
+@@ -1778,7 +1778,7 @@ void MI_CALL ReceiveShellComplete(
+ 
+             if (type & MI_INSTANCE)
+             {
+-                MI_Result miResult;
++                MI_Result miResult = MI_RESULT_FAILED;
+ 
+                 if (type & MI_ARRAY)
+                 {

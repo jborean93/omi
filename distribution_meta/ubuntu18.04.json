@@ -3,7 +3,9 @@
     "package_manager": "apt",
     "microsoft_repo": "https://packages.microsoft.com/config/ubuntu/18.04/packages-microsoft-prod.deb",
     "build_deps": [
+        "cmake",
         "g++",
+        "git",
         "libkrb5-dev",
         "libpam-dev",
         "libssl-dev",

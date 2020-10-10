@@ -10,6 +10,7 @@ __metaclass__ = type
 import argparse
 import os
 import os.path
+import re
 import subprocess
 import tempfile
 
@@ -85,19 +86,24 @@ fi
 git clone https://github.com/PowerShell/psl-omi-provider.git "{0}"
 cd "{0}"'''.format('/tmp/psl-omi-provider')))
 
-    psl_patches = [p for p in os.listdir(os.path.join(OMI_REPO, 'psl-omi-provider')) if p.endswith('.diff')]
+    # Get a list of patches to apply to psl-omi-provider and sort them by the leading digit in the filename.
+    psl_patches = [p for p in os.listdir(os.path.join(OMI_REPO, 'psl-omi-provider'))
+        if re.match(r'^\d+\..*\.diff$', p)]
+    psl_patches.sort(key=lambda p: int(p.split('.')[0]))
+
     script_steps.append(('Applying psl-omi-provider patches',
         '\n'.join(['git apply "${OMI_REPO}/psl-omi-provider/%s"' % p for p in psl_patches])))
 
     built_type = 'Debug' if args.debug else 'Release'
     library_extension = 'dylib' if distribution == 'macOS' else 'so'
     script_steps.append(('Building libpsrpclient', '''rm -rf omi
-ln -s "${{OMI_REPO}}" .
+ln -s "${{OMI_REPO}}" omi
 
-if [ -f omi/Unix/output ]; then
+if [ -e omi/Unix/output ]; then
     rm omi/Unix/output
 fi
 ln -s {0} omi/Unix/output
+
 cd src
 cmake -DCMAKE_BUILD_TYPE={1} .
 make psrpclient
