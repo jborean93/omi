@@ -119,7 +119,7 @@ cp libpsrpclient.{2} "${{OMI_REPO}}/Unix/{0}/pwsh/"'''.format(output_dirname, bu
         script_steps.append(('Patch libmi dylib path for libpsrpclient', '''install_name_tool -change \\
     '{0}/lib/libmi.dylib' \\
     '@executable_path/libmi.dylib' \\
-    "${{OMI_REPO}}/Unix/{1}/lib/libpsrpclient.dylib"'''.format(args.prefix, output_dirname)))
+    "${{OMI_REPO}}/Unix/{1}/pwsh/libpsrpclient.dylib"'''.format(args.prefix, output_dirname)))
 
     build_script = build_bash_script(script_steps)
 
@@ -148,7 +148,7 @@ cp libpsrpclient.{2} "${{OMI_REPO}}/Unix/{0}/pwsh/"'''.format(output_dirname, bu
                 subprocess.check_call(['bash', temp_fd.name], cwd=OMI_REPO)
 
             libmi_path = os.path.join(build_dir, 'pwsh')
-            print("Successfully build\n\t{0}/libmi.{1}\n\t{0}/libpsrpclient.{1}".format(libmi_path, library_extension))
+            print("Successfully built\n\t{0}/libmi.{1}\n\t{0}/libpsrpclient.{1}".format(libmi_path, library_extension))
 
 
 def parse_args():
