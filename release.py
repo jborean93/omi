@@ -56,7 +56,7 @@ def main():
                     tar.add(os.path.join(artifact_dir, lib_name), arcname=lib_name)
 
         # Create the PSWSMan nupkg
-        pwsh_command = u'''$ErrorActionPreference = 'Stop'
+        pwsh_command = '''$ErrorActionPreference = 'Stop'
 
 $outputDir = '%s'
 $repoParams = @{
@@ -76,10 +76,12 @@ try {
     Unregister-PSRepository -Name $repoParams.Name
 }
 ''' % args.output_dir
-        encoded_pwsh = base64.b64encode(pwsh_command.encode('utf-16-le')).decode()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1') as temp_fd:
+            temp_fd.write(pwsh_command)
+            temp_fd.flush()
 
-        print("Creating PSWSMan nupkg")
-        subprocess.check_call(['pwsh', '-EncodedCommand', encoded_pwsh], cwd=OMI_REPO)
+            print("Creating PSWSMan nupkg")
+            subprocess.check_call(['pwsh', '-File', temp_fd.name], cwd=OMI_REPO)
 
         nupkg_name = None
         for name in os.listdir(args.output_dir):

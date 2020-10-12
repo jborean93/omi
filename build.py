@@ -40,7 +40,7 @@ def main():
     if args.docker and not distro_details['container_image']:
         raise ValueError("Cannot run --docker on %s as no container_image has been specified" % distribution)
 
-    script_steps = [('Getting current directory path', 'OMI_REPO="$( pwd )"')]
+    script_steps = [('Getting current directory path', 'OMI_REPO="$( pwd )"\necho "Current Directory: $OMI_REPO"')]
     output_dirname = 'build-%s' % distribution
     library_extension = 'dylib' if distribution == 'macOS' else 'so'
 
@@ -52,6 +52,7 @@ def main():
     if not args.skip_clear:
         rm_script = '''cd Unix
 if [ -d "{0}" ]; then
+    echo "Found existing build folder '{0}', clearing"
     rm -rf "{0}"
 fi'''.format(output_dirname)
         script_steps.append(('Entering OMI source folder and cleaning any existing build', rm_script))
@@ -68,7 +69,7 @@ fi'''.format(output_dirname)
     # value and add to our configure args.
     if distribution == 'macOS':
         script_steps.append(('Getting OpenSSL locations for macOS',
-            'OPENSSL_PREFIX="$(brew --prefix openssl@1.1)"'))
+            'OPENSSL_PREFIX="$(brew --prefix openssl@1.1)"\necho "Using OpenSSL at \'${OPENSSL_PREFIX}\'"'))
 
         configure_args.extend([
             '--openssl="${OPENSSL_PREFIX}/bin/openssl"',
@@ -100,8 +101,8 @@ cd "{0}"'''.format('/tmp/psl-omi-provider')))
         if re.match(r'^\d+\..*\.diff$', p)]
     psl_patches.sort(key=lambda p: int(p.split('.')[0]))
 
-    script_steps.append(('Applying psl-omi-provider patches',
-        '\n'.join(['git apply "${OMI_REPO}/psl-omi-provider/%s"' % p for p in psl_patches])))
+    script_steps.append(('Applying psl-omi-provider patches', '\n'.join(['''echo "Applying "{0}"
+git apply "${{OMI_REPO}}/psl-omi-provider/%s"'''.format(p) for p in psl_patches])))
 
     built_type = 'Debug' if args.debug else 'Release'
     script_steps.append(('Building libpsrpclient', '''rm -rf omi

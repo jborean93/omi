@@ -1,6 +1,6 @@
 @{
     ModuleVersion = '2.0.0'
-    RootModule = 'PSWsman'
+    RootModule = 'PSWSMan'
     GUID = '92ec96bf-3ff4-41b2-8694-cd3ee636d3fd'
     Author = 'Jordan Borean'
     Copyright = 'Copyright (c) 2020 by Jordan Borean'
