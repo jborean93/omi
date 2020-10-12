@@ -25,9 +25,11 @@ __pycache__/
 *.swp
 /build-*.sh
 /krb5.conf
+/omi.version
 /test-*.sh
 /ci-*.zip
 /Unix/build-*
 /integration_environment/.vagrant
 /integration_environment/cert_setup
 /integration_environment/exchange*
+/PSWSMan/lib/*

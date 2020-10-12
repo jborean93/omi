@@ -4,9 +4,11 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import collections
 import json
 import os
 import os.path
+import re
 import subprocess
 import sys
 
@@ -15,6 +17,8 @@ try:
 except ImportError:
     argcomplete = None
 
+
+OMIVersion = collections.namedtuple('OMIVersion', ['major', 'minor', 'patch'])
 
 OMI_REPO = os.path.abspath(os.path.dirname(__file__))
 
@@ -194,6 +198,28 @@ def docker_run(image, script, cwd='/omi', env=None, interactive=False):
 
     print("Starting docker with: %s" % " ".join(docker_args))
     subprocess.check_call(docker_args)
+
+
+def get_version():  # type: () -> OMIVersion
+    """ Gets the major.minor.patch version of this OMI library from the PSWSMan manifest. """
+    major = None
+    minor = None
+    patch = None
+
+    module_version_pattern = re.compile(r'^\s*ModuleVersion\s*=\s*[\"|\'](\d+)\.(\d+)\.(\d+)[\"|\']$')
+    with open(os.path.join(OMI_REPO, 'PSWSMan', 'PSWSMan.psd1'), mode='r') as fd:
+        for line in fd:
+            version_match = module_version_pattern.match(line)
+            if version_match:
+                major = version_match.group(1)
+                minor = version_match.group(2)
+                patch = version_match.group(3)
+                break
+
+        else:
+            raise RuntimeError("Failed to find the ModuleVersion in PSWSMan manifest.")
+
+    return OMIVersion(major, minor, patch)
 
 
 def load_distribution_config(distribution):  # type: (str) -> Dict[str, any]

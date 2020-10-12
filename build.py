@@ -13,6 +13,7 @@ import os.path
 import re
 import subprocess
 import tempfile
+import warnings
 
 from utils import (
     argcomplete,
@@ -21,6 +22,7 @@ from utils import (
     build_package_command,
     complete_distribution,
     docker_run,
+    get_version,
     load_distribution_config,
     OMI_REPO,
     select_distribution,
@@ -80,11 +82,11 @@ fi'''.format(output_dirname)
     script_steps.append(('Running configure', configure_script))
     script_steps.append(('Running make', 'make'))
     script_steps.append(('Copying libmi to pwsh build dir',
-        '''if [ -d '{0}/pwsh' ]; then
-    rm -rf '{0}/pwsh'
+        '''if [ -d '../PSWSMan/lib/{0}' ]; then
+    rm -rf '../PSWSMan/lib/{0}'
 fi
-mkdir '{0}/pwsh'
-cp '{0}/lib/libmi.{1}' '{0}/pwsh/\''''.format(output_dirname, library_extension)))
+mkdir '../PSWSMan/lib/{0}'
+cp '{1}/lib/libmi.{2}' '../PSWSMan/lib/{0}/\''''.format(distribution, output_dirname, library_extension)))
 
     script_steps.append(('Cloning upstream psl-omi-provider repo',
         '''if [ -d "{0}" ]; then
@@ -113,13 +115,13 @@ ln -s {0} omi/Unix/output
 cd src
 cmake -DCMAKE_BUILD_TYPE={1} .
 make psrpclient
-cp libpsrpclient.{2} "${{OMI_REPO}}/Unix/{0}/pwsh/"'''.format(output_dirname, built_type, library_extension)))
+cp libpsrpclient.* "${{OMI_REPO}}/PSWSMan/lib/{2}/"'''.format(output_dirname, built_type, distribution)))
 
     if distribution == 'macOS':
         script_steps.append(('Patch libmi dylib path for libpsrpclient', '''install_name_tool -change \\
     '{0}/lib/libmi.dylib' \\
     '@executable_path/libmi.dylib' \\
-    "${{OMI_REPO}}/Unix/{1}/pwsh/libpsrpclient.dylib"'''.format(args.prefix, output_dirname)))
+    "${{OMI_REPO}}/PSWSMan/lib/{1}/libpsrpclient.dylib"'''.format(args.prefix, distribution)))
 
     build_script = build_bash_script(script_steps)
 
@@ -134,8 +136,19 @@ cp libpsrpclient.{2} "${{OMI_REPO}}/Unix/{0}/pwsh/"'''.format(output_dirname, bu
             configure_dir = os.path.join(OMI_REPO, 'Unix')
             build_dir = os.path.join(configure_dir, output_dirname)
 
+            env_vars = {}
+
+            # Get the omi.version from the PSWSMan module manifest
+            try:
+                version = get_version()
+            except RuntimeError:
+                warnings.warn("Failed to find Moduleversion in PSWSMan manifest, defaulting to upstream behaviour")
+            else:
+                env_vars['OMI_BUILDVERSION_MAJOR'] = version.major
+                env_vars['OMI_BUILDVERSION_MINOR'] = version.minor
+                env_vars['OMI_BUILDVERSION_PATCH'] = version.patch
+
             if args.docker:
-                env_vars = {}
                 for key, value in os.environ.items():
                     if key.startswith('OMI_BUILDVERSION_'):
                         env_vars[key] = value
@@ -145,9 +158,10 @@ cp libpsrpclient.{2} "${{OMI_REPO}}/Unix/{0}/pwsh/"'''.format(output_dirname, bu
 
             else:
                 print("Running build locally")
-                subprocess.check_call(['bash', temp_fd.name], cwd=OMI_REPO)
+                env_vars.update(os.environ.copy())
+                subprocess.check_call(['bash', temp_fd.name], cwd=OMI_REPO, env=env_vars)
 
-            libmi_path = os.path.join(build_dir, 'pwsh')
+            libmi_path = os.path.join(OMI_REPO, 'PSWSMan', 'lib', distribution)
             print("Successfully built\n\t{0}/libmi.{1}\n\t{0}/libpsrpclient.{1}".format(libmi_path, library_extension))
 
 

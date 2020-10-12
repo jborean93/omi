@@ -24,7 +24,10 @@ Function setenv {
         $Value
     )
 
+    # We need to use the native setenv call as .NET keeps it's own register of env vars that are separate from the
+    # process block that native libraries like libmi sees. We still set the .NET env var to keep things in sync.
     [PSWSMan.Environment]::setenv($Name, $Value)
+    Set-Item -LiteralPath env:$Name -Value $Value    
 }
 
 Function unsetenv {
@@ -39,7 +42,12 @@ Function unsetenv {
         $Name
     )
 
+    # We need to use the native unsetenv call as .NET keeps it's own register of env vars that are separate from the
+    # process block that native libraries like libmi sees. We still unset the .NET env var to keep things in sync.
     [PSWSMan.Environment]::unsetenv($Name)
+    if (Test-Path -LiteralPath env:$Name) {
+        Remove-Item -LiteralPath env:$Name -Force
+    }
 }
 
 Function Get-Distribution {
@@ -116,19 +124,121 @@ Function Get-ValidDistributions {
 }
 
 Function Disable-WSManCertVerification {
-    [CmdletBinding(SupportsShouldProcess=$true)]
-    param (
+    <#
+    .SYNOPSIS
+    Disables certificate verification globally.
 
+    .DESCRIPTION
+    Disables certificate verification for any WSMan requests globally. This can be disabled for just the CA or CN
+    checks or for all checks. The absence of a switch does not enable those checks, it only disables the specific
+    check requested if it was not disabled already.
+
+    .PARAMETER CACheck
+    Disables the certificate authority (CA) checks, i.e. the certificate authority chain does not need to be trusted.
+
+    .PARAMETER CNCheck
+    Disables the common name (CN) checks, i.e. the hostname does not need to match the CN or SAN on the endpoint
+    certificate.
+
+    .PARAMETER All
+    Disables both the CA and CN checks.
+
+    .EXAMPLE Disable all cert verification checks
+    Disable-WSManCertVerification -All
+
+    .EXAMPLE Disable just the CA verification checks
+    Disable-WSManCertVerification -CACheck
+
+    .NOTES
+    These checks are set through environment vars which are scoped to a process and are not set to a specific
+    connection. Unless you've set the specific env vars yourself then cert verification is enabled by default.
+    #>
+    [CmdletBinding(DefaultParameterSetName='Individual')]
+    param (
+        [Parameter(ParameterSetName='Individual')]
+        [Switch]
+        $CACheck,
+
+        [Parameter(ParameterSetName='Individual')]
+        [Switch]
+        $CNCheck,
+
+        [Parameter(ParameterSetName='All')]
+        [Switch]
+        $All
     )
 
+    if ($All) {
+        $CACheck = $true
+        $CNCheck = $true
+    }
+
+    if ($CACheck) {
+        setenv 'OMI_SKIP_CA_CHECK', '1'
+    }
+
+    if ($CNCheck) {
+        setenv 'OMI_SKIP_CA_CHECK', '1'
+    }
 }
 
 Function Enable-WSManCertVerification {
-    [CmdletBinding(SupportsShouldProcess=$true)]
+    <#
+    .SYNOPSIS
+    Enables cert verification globally.
+
+    .DESCRIPTION
+    Enables certificate verification for any WSMan requests globally. This can be enabled for just the CA or CN checks
+    or for all checks. The absence of a switch does not disable those checks, it only enables the specific check
+    requested  if it was not enabled already.
+
+    .PARAMETER CACheck
+    Enable the certificate authority (CA) checks, i.e. the certificate authority chain is checked for the endpoint
+    certificate.
+
+    .PARAMETER CNCheck
+    Enable the common name (CN) checks, i.e. the hostname matches the CN or SAN on the endpoint certificate.
+
+    .PARAMETER All
+    Enables both the CA and CN checks.
+
+    .EXAMPLE Enable all cert verification checks
+    Enable-WSManCertVerification -All
+
+    .EXAMPLE Enable just the CA verification checks
+    Enable-WSManCertVerification -CACheck
+
+    .NOTES
+    These checks are set through environment vars which are scoped to a process and are not set to a specific
+    connection. Unless you've set the specific env vars yourself then cert verification is enabled by default.
+    #>
+    [CmdletBinding(DefaultParameterSetName='Individual')]
     param (
-        
+        [Parameter(ParameterSetName='Individual')]
+        [Switch]
+        $CACheck,
+
+        [Parameter(ParameterSetName='Individual')]
+        [Switch]
+        $CNCheck,
+
+        [Parameter(ParameterSetName='All')]
+        [Switch]
+        $All
     )
 
+    if ($All) {
+        $CACheck = $true
+        $CNCheck = $true
+    }
+
+    if ($CACheck) {
+        unsetenv 'OMI_SKIP_CA_CHECK'
+    }
+
+    if ($CNCheck) {
+        unsetenv 'OMI_SKIP_CA_CHECK'
+    }
 }
 
 Function Install-WSMan {
@@ -147,7 +257,7 @@ Function Install-WSMan {
 
     .NOTES
     Once updated, PowerShell must be restarted for the library to be usable. This is a limitation of how the libraries
-    are loaded in a process.
+    are loaded in a process. The function will warn if one of the libraries has been changed and a restart is required.
     #>
     [CmdletBinding(SupportsShouldProcess=$true)]
     param (
@@ -163,6 +273,7 @@ Function Install-WSMan {
             return
         }
     }
+    Write-Verbose -Message "Installing WSMan libs for '$Distribution'"
 
     $validDistributions = Get-ValidDistributions
     if ($Distribution -notin $validDistributions) {
@@ -176,6 +287,7 @@ Function Install-WSMan {
     $distributionLib = Join-Path $Script:LibPath -ChildPath $Distribution
     $libExtension = if ($_.Name -eq 'macOS') { 'dylib' } else { 'so' }
 
+    $notify = $false
     Get-ChildItem -LiteralPath $distributionLib -File -Filter "*.$libExtension" | ForEach-Object -Process {
         $destPath = Join-Path -Path $pwshDir -ChildPath $_.Name
 
@@ -188,12 +300,16 @@ Function Install-WSMan {
         }
 
         if ($change) {
-            # TODO: Verify whether -WhatIf gets applied here
+            Write-Verbose -Message "Installing $($_.Name) to '$pwshDir'"
             Copy-Item -LiteralPath $_.Fullname -Destination $destPath
+            $notify = $true
         }
     }
 
-    # TODO: macOS, clear attributes
+    if ($notify) {
+        $msg = 'WSMan libs have been installed, please restart your PowerShell session to enable it in PowerShell'
+        Write-Warning -Message $msg
+    }
 }
 Register-ArgumentCompleter -CommandName Install-WSMan -ParameterName Distribution -ScriptBlock { Get-ValidDistributions }
 

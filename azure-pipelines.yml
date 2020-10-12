@@ -60,7 +60,7 @@ stages:
 
     - task: PublishPipelineArtifact@1
       inputs:
-        targetPath: Unix/build-$(distribution)/pwsh/
+        targetPath: PSWSMan/lib/$(distribution)/
         artifactName: $(distribution)
       displayName: Publish artifacts
 
@@ -89,7 +89,7 @@ stages:
 
     - task: PublishPipelineArtifact@1
       inputs:
-        targetPath: Unix/build-macOS/pwsh/
+        targetPath: PSWSMan/lib/macOS/
         artifactName: macOS
       displayName: Publish artifacts
 
@@ -109,10 +109,26 @@ stages:
     - task: DownloadPipelineArtifact@2
       inputs:
         source: current
-        path: $(Build.ArtifactStagingDirectory)
+        path: PSWSMan/lib
 
-    - script: ./release.py --pipeline-artifacts "$(Build.ArtifactStagingDirectory)"
-      displayName: Rename the published artifacts for the GitHub release assets
+    - script: sed -i '/Prerelease =/d' PSWSMan/PSWSMan.psd1
+      displayName: Remove prerelease data in psd1 manifest for final release
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['Build.Reason'], 'IndividualCI'),
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+          startsWith(variables['Build.SourceVersionMessage'], 'release ')
+        )
+
+    - script: ./release.py --output-dir "$(Build.ArtifactStagingDirectory)"
+      displayName: Create artifacts to publish for GitHub and PowerShell Gallery
+
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: $(Build.ArtifactStagingDirectory)/PSWSMan*.nupkg
+        artifactName: PSWSMan
+      displayName: Publish PSWSMan nupkg
 
     - task: GitHubRelease@0
       inputs:
