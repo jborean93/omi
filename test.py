@@ -49,7 +49,7 @@ def main():
 
         elif distribution == 'debian9':
             debian_ms = 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-debian-stretch-prod stretch main" > /etc/apt/sources.list.d/microsoft.list'
-            script_steps.append(('Further steps for MS repo on Debian 8', debian_ms))
+            script_steps.append(('Further steps for MS repo on Debian 9', debian_ms))
 
         script_steps.append(('Installing test dependency packages', dep_script))
 
@@ -72,9 +72,9 @@ pwsh -NoProfile -NoLogo -File /tmp/pwsh-requirements.ps1'''
 
     # On macOS we aren't running as root in a container so this step needs sudo.
     sudo_prefix = 'sudo ' if distribution == 'macOS' else ''
-    copy_script = '''PWSHDIR="$( dirname "$( readlink "$( which pwsh )" )" )"
-%s/bin/cp Unix/build-%s/pwsh/* "${PWSHDIR}/"''' % (sudo_prefix, distribution)
-    script_steps.append(('Copying lib artifacts to the PowerShell directory', copy_script))
+    install_script = '''PWSHDIR="$( dirname "$( readlink "$( which pwsh )" )" )"
+%spwsh -Command 'Import-Module ./PSWSMan; Install-WSMan\'''' % sudo_prefix
+    script_steps.append(('Copying lib artifacts to the PowerShell directory', install_script))
 
     pester_script = '''cat > /tmp/pwsh-test.ps1 << EOL
 \$ErrorActionPreference = 'Stop'

@@ -1,16 +1,7 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-# Setting an env var in .NET doesn't actually change the process env table. For these tests to actually manipulate the
-# verification behaviour we need to use PInvoke and call setenv directory.
-Add-Type -Namespace OMI -Name Environment -MemberDefinition @'
-[DllImport("libc")]
-public static extern void setenv(string name, string value);
-
-[DllImport("libc")]
-public static extern void unsetenv(string name);
-'@
-
+Import-Module ./PSWSMan
 Import-Module -Name powershell-yaml
 $Global:Config = ConvertFrom-Yaml -Yaml (Get-Content -LiteralPath $PSScriptRoot/integration_environment/inventory.yml -Raw)
 
@@ -119,6 +110,24 @@ BeforeAll {
     }
 }
 
+Describe "PSWSMan tests" {
+    It "Calculates the right distribution" {
+        $actual = &(Get-Module PSWSMan) { Get-Distribution }
+        $actual | Should -Be $Global:Distribution
+    }
+
+    It "Doesn't error when installing libs again" {
+        Install-WSMan -WarningVariable wv
+        [bool]$wv | Should -Be $false
+    }
+
+    It "Errors with invalid distribution" {
+        Install-WSMan -Distribution invalid -ErrorVariable ev -ErrorAction SilentlyContinue
+        $ev.Count | Should -Be 1
+        $ev[0].Exception.Message | Should -BeLike "Unsupported distribution 'invalid'. Supported distributions: *"
+    }
+}
+
 Describe "Checking the compiled library's integrity" {
     It "Exposes the custom public version function" {
         $version = &"$PSScriptRoot/tools/Get-OmiVersion.ps1"
@@ -224,15 +233,13 @@ Describe "PSRemoting over HTTPS" {
             $CommonInvokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
         }
 
-        [OMI.Environment]::unsetenv('OMI_SKIP_CA_CHECK')
-        [OMI.Environment]::unsetenv('OMI_SKIP_CN_CHECK')
-        [OMI.Environment]::unsetenv('SSL_CERT_FILE')
+        Enable-WSManCertVerification -All
+        [PSWSMan.Environment]::unsetenv('SSL_CERT_FILE')
     }
 
     AfterEach {
-        [OMI.Environment]::unsetenv('OMI_SKIP_CA_CHECK')
-        [OMI.Environment]::unsetenv('OMI_SKIP_CN_CHECK')
-        [OMI.Environment]::unsetenv('SSL_CERT_FILE')
+        Enable-WSManCertVerification -All
+        [PSWSMan.Environment]::unsetenv('SSL_CERT_FILE')
     }
 
     # ChannelBindingToken doesn't work on SPNEGO with MIT krb5 until after 1.18.2. Fedora 32 seems to have backported
@@ -248,7 +255,7 @@ Describe "PSRemoting over HTTPS" {
         $invokeParams = $CommonInvokeParams.Clone()
         $invokeParams.ComputerName = $Global:TestHostInfo.HostnameIP
 
-        [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', '1')
+        Disable-WSManCertVerification -CNCheck
         $actual = Invoke-Command @invokeParams -Port $GoodCertPort -Authentication Negotiate
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
@@ -259,7 +266,7 @@ Describe "PSRemoting over HTTPS" {
     }
 
     It "Trusts a certificate using the SSL_CERT_FILE env var" {
-        [OMI.Environment]::setenv('SSL_CERT_FILE',
+        [PSWSMan.Environment]::setenv('SSL_CERT_FILE',
             [IO.Path]::Combine($PSScriptRoot, 'integration_environment', 'cert_setup', 'ca_explicit.pem'))
         $actual = Invoke-Command @CommonInvokeParams -Port $ExplicitCertPort -Authentication Kerberos
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
@@ -282,36 +289,21 @@ Describe "PSRemoting over HTTPS" {
     It "Fails to verify the CN - <Scenario>" -Skip:$skipCN -TestCases @(
         @{
             Scenario = 'Default'
-            EnvVars = @{}
+            Process = {}
             Expected = $Global:ExpectedVerificationError
         },
         @{
             Scenario = 'Skip CA check'
-            EnvVars = @{ OMI_SKIP_CA_CHECK =  '1' }
+            Process = { Disable-WSManCertVerification -CACheck }
             Expected = '*Certificate hostname verification failed - set OMI_SKIP_CN_CHECK=1 to ignore.*'
-        },
-        @{
-            Scenario = 'OMI_SKIP_CN_CHECK=0'
-            EnvVars = @{ OMI_SKIP_CN_CHECK = '0' }
-            Expected = $Global:ExpectedVerificationError
-        }
-        @{
-            Scenario = 'OMI_SKIP_CN_CHECK=false'
-            EnvVars = @{ OMI_SKIP_CN_CHECK = 'fAlse' }
-            Expected = $Global:ExpectedVerificationError
         }
     ) {
-        foreach ($kvp in $EnvVars.GetEnumerator()) {
-            [OMI.Environment]::setenv($kvp.Key, $kvp.Value)
-        }
+        .$Process
         { Invoke-Command @CommonInvokeParams -Port $BadCNPort -Authentication Kerberos } | Should -Throw $Expected
     }
 
-    It "Ignores a CN failure with env value '<Value>'" -TestCases @(
-        @{ Value = '1' },
-        @{ Value = 'trUe' }
-    ) -Skip:$skipCN {
-        [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', $Value)
+    It "Ignores a CN failure with env value" -Skip:$skipCN {
+        Disable-WSManCertVerification -CNCheck
         $actual = Invoke-Command @CommonInvokeParams -Port $BadCNPort -Authentication Kerberos
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
@@ -319,32 +311,19 @@ Describe "PSRemoting over HTTPS" {
     It "Fails to verify the CA - <Scenario>" -TestCases @(
         @{
             Scenario = 'Default'
-            EnvVars = @{}
+            Process = {}
         },
         @{
             Scenario = 'Skip CN check'
-            EnvVars = @{ OMI_SKIP_CN_CHECK =  '1' }
-        },
-        @{
-            Scenario = 'OMI_SKIP_CA_CHECK=0'
-            EnvVars = @{ OMI_SKIP_CA_CHECK = '0' }
-        }
-        @{
-            Scenario = 'OMI_SKIP_CA_CHECK=false'
-            EnvVars = @{ OMI_SKIP_CA_CHECK = 'faLse' }
+            Process = { Disable-WSManCertVerification -CNCheck }
         }
     ) {
-        foreach ($kvp in $EnvVars.GetEnumerator()) {
-            [OMI.Environment]::setenv($kvp.Key, $kvp.Value)
-        }
+        .$Process
         { Invoke-Command @CommonInvokeParams -Port $BadCAPort -Authentication Kerberos } | Should -Throw $Global:ExpectedVerificationError
     }
 
-    It "Ignores a CA failure with env value '<Value>'" -TestCases @(
-        @{ Value = '1' },
-        @{ Value = 'truE' }
-    ) {
-        [OMI.Environment]::setenv('OMI_SKIP_CA_CHECK', $Value)
+    It "Ignores a CA failure with env value" {
+        Disable-WSManCertVerification -CACheck
         $actual = Invoke-Command @CommonInvokeParams -Port $BadCAPort -Authentication Kerberos
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
@@ -352,29 +331,26 @@ Describe "PSRemoting over HTTPS" {
     It "Failed to verify the CA and CN - <Scenario>" -Skip:$skipCN -TestCases @(
         @{
             Scenario = 'No skips'
-            EnvVars = @{}
+            Process = {}
             Expected = $Global:ExpectedVerificationError
         },
         @{
             Scenario = 'Skip CA check'
-            EnvVars = @{ OMI_SKIP_CA_CHECK = '1' }
+            Process = { Disable-WSManCertVerification -CACheck }
             Expected = '*Certificate hostname verification failed - set OMI_SKIP_CN_CHECK=1 to ignore.*'
         },
         @{
             Scenario = 'Skip CN check'
-            EnvVars = @{ OMI_SKIP_CN_CHECK = '1' }
+            Process = { Disable-WSManCertVerification -CNCheck }
             Expected = $Global:ExpectedVerificationError
         }
     ) {
-        foreach ($kvp in $EnvVars.GetEnumerator()) {
-            [OMI.Environment]::setenv($kvp.Key, $kvp.Value)
-        }
+        .$Process
         { Invoke-Command @CommonInvokeParams -Port 5986 -Authentication Kerberos } | Should -Throw $Expected
     }
 
     It "Ignores a CA and CN failure" {
-        [OMI.Environment]::setenv('OMI_SKIP_CA_CHECK', '1')
-        [OMI.Environment]::setenv('OMI_SKIP_CN_CHECK', '1')
+        Disable-WSManCertVerification -All
         $actual = Invoke-Command @CommonInvokeParams -Port 5986 -Authentication Kerberos
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
@@ -414,10 +390,10 @@ Describe "Kerberos delegation" {
 '@
             
             $existingConfig = $env:KRB5_CONFIG
-            [OMI.Environment]::setenv('KRB5_CONFIG', "$($tempConfig):$existingConfig")
+            [PSWSMan.Environment]::setenv('KRB5_CONFIG', "$($tempConfig):$existingConfig")
             $actual = Invoke-Command @invokeParams
         } finally {
-            [OMI.Environment]::setenv('KRB5_CONFIG', $existingConfig)
+            [PSWSMan.Environment]::setenv('KRB5_CONFIG', $existingConfig)
             Remove-Item -LiteralPath $tempConfig -Force
         }
 

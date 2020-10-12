@@ -174,11 +174,11 @@ Function Disable-WSManCertVerification {
     }
 
     if ($CACheck) {
-        setenv 'OMI_SKIP_CA_CHECK', '1'
+        setenv 'OMI_SKIP_CA_CHECK' '1'
     }
 
     if ($CNCheck) {
-        setenv 'OMI_SKIP_CA_CHECK', '1'
+        setenv 'OMI_SKIP_CN_CHECK' '1'
     }
 }
 
@@ -237,7 +237,7 @@ Function Enable-WSManCertVerification {
     }
 
     if ($CNCheck) {
-        unsetenv 'OMI_SKIP_CA_CHECK'
+        unsetenv 'OMI_SKIP_CN_CHECK'
     }
 }
 

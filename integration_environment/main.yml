@@ -380,34 +380,13 @@
         return_content: yes
       register: azure_artifacts
 
-    - name: process artifact download info
-      set_fact:
-        artifact_details: >-
-          {{
-              artifact_details | default([]) + [{
-                  "distribution": azure_artifacts.json.value[item | int].name,
-                  "url": azure_artifacts.json.value[item | int].resource.downloadUrl
-              }]
-          }}
+    - name: downloading azure DevOps build artifacts
+      unarchive:
+        src: '{{ azure_artifacts.json.value[item | int].resource.downloadUrl }}'
+        dest: ~/omi/PSWSMan/lib
+        remote_src: yes
+      become: no
+      when: azure_artifacts.json.value[item | int].name != 'PSWSMan'
       with_sequence: start=0 end={{ (azure_artifacts.json.count | int) - 1 }}
       loop_control:
         label: '{{ azure_artifacts.json.value[item | int].name }}'
-
-    - name: download artifact zip
-      get_url:
-        url: '{{ item.url }}'
-        dest: ~/omi/ci-{{ item.distribution }}.zip
-      become: no
-      loop: '{{ artifact_details }}'
-
-    - name: make sure the lib directory exists
-      file:
-        path: ~/omi/Unix/build-{{ item.distribution }}/pwsh
-        state: directory
-      become: no
-      loop: '{{ artifact_details }}'
-
-    - name: extract .so from zip
-      command: unzip -oj ~/omi/ci-{{ item.distribution }}.zip {{ item.distribution }}/lib*.* -d ~/omi/Unix/build-{{ item.distribution }}/pwsh
-      become: no
-      loop: '{{ artifact_details }}'
