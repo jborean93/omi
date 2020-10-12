@@ -136,6 +136,21 @@ stages:
         artifactName: PSWSMan
       displayName: Publish PSWSMan nupkg
 
+    - task: NuGetCommand@2
+      inputs:
+        command: push
+        packagesToPush: $(Build.ArtifactStagingDirectory)/*.nupkg
+        nuGetFeedType: external
+        publishFeedCredentials: PowerShell Gallery
+      displayName: Publish PSWSMan to PSGallery
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['Build.Reason'], 'IndividualCI'),
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+          startsWith(variables['Build.SourceVersionMessage'], 'release ')
+        )
+
     - task: GitHubRelease@0
       inputs:
         gitHubConnection: GitHub Release
