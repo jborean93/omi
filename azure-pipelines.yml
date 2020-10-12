@@ -121,14 +121,18 @@ stages:
           startsWith(variables['Build.SourceVersionMessage'], 'release ')
         )
 
-    - pwsh: Test-ModuleManifest -Path PSWSMan/PSWSMan.psd1
-
     - script: ./release.py --output-dir "$(Build.ArtifactStagingDirectory)"
       displayName: Create artifacts to publish for GitHub and PowerShell Gallery
 
+    - script: |
+        NUPKG_PATH="$( ls $(Build.ArtifactStagingDirectory)/PSWSMan*.nupkg )"
+        echo "Found PSWSman nupkg at '${NUPKG_PATH}'"
+        echo "##vso[task.setvariable variable=NupkgPath]${NUPKG_PATH}"
+      displayName: Get full path to published nupkg
+
     - task: PublishPipelineArtifact@1
       inputs:
-        targetPath: $(Build.ArtifactStagingDirectory)/PSWSMan*.nupkg
+        targetPath: $(NupkgPath)
         artifactName: PSWSMan
       displayName: Publish PSWSMan nupkg
 

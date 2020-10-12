@@ -121,6 +121,7 @@ fi
 ln -s {0} omi/Unix/output
 
 cd src
+echo -e "Running cmake with\\n\\t-DCMAKE_BUILD_TYPE={1}"
 cmake -DCMAKE_BUILD_TYPE={1} .
 make psrpclient
 cp libpsrpclient.* "${{OMI_REPO}}/PSWSMan/lib/{2}/"'''.format(output_dirname, built_type, distribution)))
