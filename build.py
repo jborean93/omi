@@ -54,6 +54,8 @@ def main():
 if [ -d "{0}" ]; then
     echo "Found existing build folder '{0}', clearing"
     rm -rf "{0}"
+else
+    echo "No build folder found, no action required"
 fi'''.format(output_dirname)
         script_steps.append(('Entering OMI source folder and cleaning any existing build', rm_script))
 
@@ -78,19 +80,24 @@ fi'''.format(output_dirname)
             '--openssllibdir="${OPENSSL_PREFIX}/lib"',
         ])
 
-    configure_script = build_multiline_command('./configure', configure_args)
+    configure_script = '''echo -e "Running configure with:\\n\\t{0}"
+{1}'''.format('\\n\\t'.join(configure_args), build_multiline_command('./configure', configure_args))
 
     script_steps.append(('Running configure', configure_script))
     script_steps.append(('Running make', 'make'))
     script_steps.append(('Copying libmi to pwsh build dir',
         '''if [ -d '../PSWSMan/lib/{0}' ]; then
+    echo "Clearing existing build folder at 'PSWSMan/lib/{0}'"
     rm -rf '../PSWSMan/lib/{0}'
 fi
 mkdir '../PSWSMan/lib/{0}'
+
+echo "Copying '{1}/lib/libmi.{2}' -> 'PSWSMan/lib/{0}/'"
 cp '{1}/lib/libmi.{2}' '../PSWSMan/lib/{0}/\''''.format(distribution, output_dirname, library_extension)))
 
     script_steps.append(('Cloning upstream psl-omi-provider repo',
         '''if [ -d "{0}" ]; then
+    echo "Clearing existing psl-omi-provider repo"
     rm -rf "{0}"
 fi
 git clone https://github.com/PowerShell/psl-omi-provider.git "{0}"
@@ -101,8 +108,8 @@ cd "{0}"'''.format('/tmp/psl-omi-provider')))
         if re.match(r'^\d+\..*\.diff$', p)]
     psl_patches.sort(key=lambda p: int(p.split('.')[0]))
 
-    script_steps.append(('Applying psl-omi-provider patches', '\n'.join(['''echo "Applying "{0}"
-git apply "${{OMI_REPO}}/psl-omi-provider/%s"'''.format(p) for p in psl_patches])))
+    script_steps.append(('Applying psl-omi-provider patches', '\n'.join(['''echo "Applying '{0}'"
+git apply "${{OMI_REPO}}/psl-omi-provider/{0}"'''.format(p) for p in psl_patches])))
 
     built_type = 'Debug' if args.debug else 'Release'
     script_steps.append(('Building libpsrpclient', '''rm -rf omi
@@ -119,7 +126,9 @@ make psrpclient
 cp libpsrpclient.* "${{OMI_REPO}}/PSWSMan/lib/{2}/"'''.format(output_dirname, built_type, distribution)))
 
     if distribution == 'macOS':
-        script_steps.append(('Patch libmi dylib path for libpsrpclient', '''install_name_tool -change \\
+        script_steps.append(('Patch libmi dylib path for libpsrpclient',
+            '''echo "Patching '${{OMI_REPO}}/PSWSMan/lib/{1}/libpsrpclient.dylib' libmi location"
+install_name_tool -change \\
     '{0}/lib/libmi.dylib' \\
     '@executable_path/libmi.dylib' \\
     "${{OMI_REPO}}/PSWSMan/lib/{1}/libpsrpclient.dylib"'''.format(args.prefix, distribution)))

@@ -133,6 +133,8 @@ done''' % "' '".join(aur_packages)
     else:
         package_command = build_multiline_command(package_boilerplate[package_manager], packages)
 
+    package_command = 'echo -e "Installing packages:\\n\\t%s"\n%s' % ('\\n\\t'.join(packages), package_command)
+
     return package_command
 
 
