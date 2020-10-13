@@ -10,7 +10,8 @@
     FunctionsToExport = @(
         'Disable-WSManCertVerification',
         'Enable-WSManCertVerification',
-        'Install-WSMan'
+        'Install-WSMan',
+        'Register-TrustedCertificate'
     )
     PrivateData = @{
         PSData = @{

@@ -53,10 +53,11 @@ def main():
 
         script_steps.append(('Installing test dependency packages', dep_script))
 
-        cert_extension = distro_details['cert_extension'] if distro_details['cert_extension'] else 'pem'
-        ca_trust_script = '''cp integration_environment/cert_setup/ca.pem '%s/ca.%s'
-%s''' % (distro_details['cert_staging_dir'], cert_extension, distro_details['cert_staging_cmd'])
-        script_steps.append(('Adding CA chain to system trust store', ca_trust_script))
+        # On macOS we aren't running as root in a container so this step needs sudo.
+        sudo_prefix = 'sudo ' if distribution == 'macOS' else ''
+        register_cmd = "%spwsh -Command 'Import-Module ./PSWSMan; Register-TrustedCertificate -Path " \
+            "integration_environment/cert_setup/ca.pem -Verbose'" % sudo_prefix
+        script_steps.append(('Adding CA chain to system trust store', register_cmd))
 
         pwsh_deps = '''cat > /tmp/pwsh-requirements.ps1 << EOL
 \$ErrorActionPreference = 'Stop'
@@ -69,9 +70,6 @@ EOL
 pwsh -NoProfile -NoLogo -File /tmp/pwsh-requirements.ps1'''
         script_steps.append(('Installing Pester 5+ and other PowerShell deps', pwsh_deps))
 
-
-    # On macOS we aren't running as root in a container so this step needs sudo.
-    sudo_prefix = 'sudo ' if distribution == 'macOS' else ''
     install_script = '''PWSHDIR="$( dirname "$( readlink "$( which pwsh )" )" )"
 %spwsh -Command 'Import-Module ./PSWSMan; Install-WSMan\'''' % sudo_prefix
     script_steps.append(('Copying lib artifacts to the PowerShell directory', install_script))

@@ -1,4 +1,27 @@
+using namespace System.Security.Cryptography.X509Certificates
+using namespace System.Management.Automation
+
 $Script:LibPath = Join-Path -Path $PSScriptRoot -ChildPath lib
+
+class X509CertificateChainAttribute : ArgumentTransformationAttribute {
+    [object] Transform([EngineIntrinsics]$EngineIntrinsics, [object]$InputData) {
+        # X509Certificate2Collection is an IEnumerable so we cannot use it in a switch statement or else an empty
+        # collection becomes $null which we don't want.
+        if ($InputData -is [X509Certificate2Collection]) {
+            return $InputData
+        }
+
+        $outputData = switch($InputData) {
+             { ($_ -is [X509Certificate2]) } { [X509Certificate2Collection]::new($_) }
+             default {
+                 throw [ArgumentTransformationMetadataException]::new(
+                     "Could not convert input '$_' to a valid X509Certificate2Collection object."
+                 )
+             }
+        }
+        return $outputData
+    }
+}
 
 Add-Type -Namespace PSWSMan -Name Environment -MemberDefinition @'
 [DllImport("libc")]
@@ -7,6 +30,28 @@ public static extern void setenv(string name, string value);
 [DllImport("libc")]
 public static extern void unsetenv(string name);
 '@
+
+Function exec {
+    <#
+    .SYNOPSIS
+    Wraps a native exec call in a function so it can be set with '-ErrorAction SilentlyContinue'.
+    #>
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true, Position=0)]
+        [String]
+        $FilePath,
+
+        [Parameter(Position=1, ValueFromRemainingArguments=$true)]
+        [String[]]
+        $Arguments
+    )
+
+    &$FilePath @Arguments 2>$err
+    if ($err) {
+        $err | Write-Error
+    }
+}
 
 Function setenv {
     <#
@@ -313,11 +358,253 @@ Function Install-WSMan {
 }
 Register-ArgumentCompleter -CommandName Install-WSMan -ParameterName Distribution -ScriptBlock { Get-ValidDistributions }
 
+Function Register-TrustedCertificate {
+    <#
+    .SYNOPSIS
+    Registers a certificate into the system's trusted store.
+
+    .DESCRIPTION
+    Registers a certificate, or a chain or certificates, into the trusted store for the current Linux distribution.
+
+    .PARAMETER Name
+    The name of the certificate file to use when placing it into the trusted store directory. If not set then a random
+    filename with the prefix 'PSWSMan-' will be used.
+
+    .PARAMETER Path
+    Specifies the path of a certificate to register. Wildcard characters are permitted.
+
+    .PARAMETER LiteralPath
+    Specifies a path to one or more locations of certificates to register. The value of 'LiteralPath' is used exactly
+    as it is typed. No characters are interpreted as wildcards.
+
+    .PARAMETER Certificate
+    The raw X509Certificate2 or X509Certificate2Collection object to register.
+
+    .EXAMPLE Register multiple PEMs using a wildcard
+    Register-TrustedCertificate -Path /tmp/*.pem
+
+    .EXAMPLE Register 'my*host.pem' using a literal path
+    Register-TrustedCertificate -LiteralPath 'my*host.pem'
+
+    .EXAMPLE Load your own certificate chain and register as one chain
+    $certs = [Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
+    $certs.Add([Security.Cryptography.X509Certificates.X509Certificate2]::new('/tmp/ca1.pem'))
+    $certs.Add([Security.Cryptography.X509Certificates.X509Certificate2]::new('/tmp/ca2.pem'))
+
+    Register-TrustedCertificate -Name MyDomainChains -Certificate $certs
+
+    .EXAMPLE Register a certificate from a PEM encoded file as a normal user
+    sudo pwsh -Command { Register-TrustedCertificate -Path /tmp/my_chain.pem }
+
+    .NOTES
+    This function needs to place files into trusted directories which typically require root access. This function
+    needs to be running as root for it to succeed.
+    #>
+    [CmdletBinding(SupportsShouldProcess=$true, DefaultParameterSetName='Path')]
+    param (
+        [String]
+        $Name,
+
+        [Switch]
+        $Sudo,
+
+        [Parameter(Mandatory=$true, ParameterSetName='Path', ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true)]
+        [SupportsWildcards()]
+        [ValidateNotNullOrEmpty()]
+        [String[]]
+        $Path,
+
+        [Parameter(Mandatory=$true, ParameterSetName='LiteralPath', ValueFromPipelineByPropertyName=$true)]
+        [Alias('PSPath')]
+        [ValidateNotNullOrEmpty()]
+        [String[]]
+        $LiteralPath,
+
+        [Parameter(Mandatory=$true, ParameterSetName='Certificate', ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true)]
+        [X509CertificateChainAttribute()]
+        [X509Certificate2Collection]
+        $Certificate
+    )
+
+    begin {
+        $failed = $false
+        $distribution = Get-Distribution
+        if (-not $distribution) {
+            Write-Error -Message "Failed to find distribution for current host" -Category InvalidOperation
+            $failed = $true
+            return
+        }
+        Write-Verbose -Message "Begin certificate registration for '$distribution'"
+
+        # Determine the target path and refresh command based on the current distribution
+        $certExtension = 'pem'
+        $certPath, $refreshCommand = switch ($distribution) {
+            archlinux {
+                '/etc/ca-certificates/trust-source/anchors', 'update-ca-trust extract'
+            }
+            macOS {
+                # macOS is special, we don't use the builtin LibreSSL setup and rely on brew to provide OpenSSL. This
+                # means the path to the cert dir could change at any point in the future and we can't rely on default
+                # system locations. Instead we use otool to figure out the linked location of openssl and use that. If
+                # that fails then fallback to what should be the default '/user/local/etc/openssl@1.1/certs'.
+                $libmiPath = Join-Path -Path $Script:Libpath -ChildPath 'macOS' -AdditionalChildPath 'libmi.dylib'
+
+                $opensslPath = $null
+                if (Test-Path -LiteralPath $libmiPath) {
+                    $opensslPath = exec otool -L $libmiPath -ErrorAction SilentlyContinue |
+                        Select-String -Pattern '\s+(\/.*libssl\..*\.dylib)\s+\(.*\)' |
+                        ForEach-Object -Process { Split-Path -Path (Split-Path -Path $_.Matches[0].Groups[1]) } |
+                        Select-Object -First 1
+                }
+                elseif (Get-Command -Name brew -CommandType Application -ErrorAction SilentlyContinue) {
+                    $opensslPath = exec brew --prefix openssl -ErrorAction SilentlyContinue
+                }
+
+                if ($opensslPath) {
+                    $openssl = Join-Path $opensslPath -ChildPath bin -AdditionalChildPath openssl
+                    $certDirectory = exec $openssl @('version', '-d') -ErrorAction SilentlyContinue |
+                        Select-String -Pattern 'OPENSSLDIR:\s+[\"|''](.*)[\"|'']$' |
+                        ForEach-Object -Process { $_.Matches[0].Groups[1].Value } |
+                        Select-Object -First 1
+                }
+
+                if (-not $certDirectory) {
+                    $certDirectory = '/usr/local/etc/openssl@1.1/certs'
+                }
+                $cRehash = Join-Path -Path (Split-Path -Path $certDirectory) -ChildPath bin -AdditionalChildPath c_rehash
+
+                $certDirectory, $cRehash
+            }
+            { $_ -like 'centos*' -or $_ -like 'fedora*' } {
+                '/etc/pki/ca-trust/source/anchors', 'update-ca-trust extract'
+            }
+            { $_ -like 'debian*' -or $_ -like 'ubuntu*' } {
+                # While the format of the file is the same, these distributions expect the files to have a .crt extension.
+                $certExtension = 'crt'
+                '/usr/local/share/ca-certificates', 'update-ca-certificates'
+            }
+        }
+        Write-Verbose "Trust directory '$certPath' - Refresh command '$refreshCommand'"
+
+        if (-not (Test-Path -LiteralPath $certPath)) {
+            $msg = "Failed to find the expected cert trust path at '$certPath' for distribution '$distribution'"
+            Write-Error -Message $msg -Category ObjectNotFound
+            $failed = $true
+            return
+        }
+
+        # Store the pem files
+        $chainPems = [Collections.Generic.List[String]]@()
+    }
+
+    process {
+        # Safeguard in case the begin block failed
+        if ($failed) {
+            return
+        }
+
+        $header = '-----BEGIN CERTIFICATE-----'
+        $footer = '-----END CERTIFICATE-----'
+
+        if ($PSCmdlet.ParameterSetName -in @('Path', 'LiteralPath')) {
+            $Certificate = [X509Certificate2Collection]::new()
+            $filePaths = [Collections.Generic.List[String]]@()
+
+            if ($PSCmdlet.ParameterSetName -eq 'Path') {
+                $provider = $null
+                foreach ($rawPath in $Path) {
+                    $filePaths.AddRange($PSCmdlet.GetResolvedProviderPathFromPSPath($rawPath, [ref]$provider))
+                }
+            }
+            elseif ($PSCmdlet.ParameterSetName -eq 'LiteralPath') {
+                $filePaths.Add($PSCmdlet.GetUnresolvedProviderPathFromPSPath($LiteralPath))
+            }
+
+            foreach ($filePath in $filePaths) {
+                Write-Verbose -Message "Processing input certificate at '$filePath'"
+                if (-not (Test-Path -LiteralPath $filePath)) {
+                    Write-Error -Message "Certificate at '$filePath' does not exist." -Category ObjectNotFound
+                    continue
+                }
+
+                # X509Certificate2Collection.Import() can be temperamental when trying to load multi-pem files.
+                # Instead detect if it's a PEM file and load all the certs manually.
+                $rawCertContent = Get-Content -LiteralPath $filePath
+
+                if ($header -in $rawCertContent -and $footer -in $rawCertContent) {
+                    foreach ($line in $rawCertContent) {
+                        if (-not $line -or $line -eq $header) {
+                            $currentCert = [Text.StringBuilder]::new()
+                        }
+                        elseif ($line -eq $footer) {
+                            $certBytes = [Convert]::FromBase64String($currentCert.ToString())
+                            $cert = [X509Certificate2]::new($certBytes)
+                            $null = $Certificate.Add($cert)
+                        }
+                        else {
+                            $null = $currentCert.Append($line)
+                        }
+                    }
+                }
+                else {
+                    $Certificate.Import($filePath)
+                }
+                Write-Verbose -Message "Found $($Certificate.Count) cert(s) at '$filePath'"
+            }
+        }
+
+        foreach ($cert in $Certificate) {
+            Write-Verbose -Message "Processing certificate Subject: '$($cert.Subject)', Thumbprint: $($cert.Thumbprint)"
+            $certBytes = $cert.Export([X509ContentType]::Cert)
+            $certB64 = [Convert]::ToBase64String($certBytes, [Base64FormattingOptions]::InsertLineBreaks)
+            $certB64 = $certB64 -replace "`r`n", "`n"
+            $chainPems.Add("$header`n$certB64`n$footer")
+        }
+    }
+
+    end {
+        # Safeguard in case the begin block failed
+        if ($failed) {
+            return
+        }
+        if (-not $chainPems) {
+            Write-Verbose -Message "No certificates found to import"
+            return
+        }
+
+        $tempFile = [IO.Path]::GetTempFileName()
+        try {
+            foreach ($pem in $chainPems) {
+                Add-Content -LiteralPath $tempFile -Value $pem
+            }
+
+            if (-not $Name) {
+                $Name = "PSWSMan-$([IO.Path]::GetRandomFileName())"
+            }
+
+            $destCertPath = Join-Path -Path $certPath -ChildPath "$Name.$certExtension"
+            if ($PSCmdlet.ShouldProcess($destCertPath, 'Register')) {
+                Write-Verbose -Message "Creating trust cert file at '$destCertPath'"
+                Copy-Item -LiteralPath $tempFile -Destination $destCertPath -Force
+
+                # The command to run may contain argument, just use Invoke-Expression as the input is statically defined.
+                Write-Verbose -Message "Refreshing the trusted certificate directory with '$refreshCommand'"
+                Invoke-Expression -Command $refreshCommand
+            }
+        } finally {
+            Remove-Item -LiteralPath $tempFile -Force
+        }
+    }
+}
+
 $export = @{
     Function = @(
         'Disable-WSManCertVerification',
         'Enable-WSManCertVerification',
-        'Install-WSMan'
+        'Install-WSMan',
+        'Register-TrustedCertificate'
     )
 }
 Export-ModuleMember @export
