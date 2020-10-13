@@ -38,16 +38,26 @@ This means that connecting to a HTTPS endpoint using this library will always va
 
 ## Disabling Validation
 
-If you truly want to disable certificate validation then you need to set the following environment variables to `1`:
+If you have installed the `PSWSMan` library you can disable certificate checks with the following functions:
 
-+ `OMI_SKIP_CA_CHECK`: Like `-SkipCACheck` it will not validate the cert has been signed and issued by a authority the client trusts
-+ `OMI_SKIP_CN_CHECK`: Like `-SkipCNCheck` it will still validate the CA chain of the cert but it will not verify the hostname matches the cert `CN` or `SAN` entries
+```powershell
+# Do not check if the cert has been signed and issued by a authority the client trusts
+Disable-WSManCertVerification -CACheck
+# Do not check the hostname matches the cert `CN` or `SAN` entries
+Disable-WSManCertVerification -CNCheck
 
+# Disable all
+Disable-WSManCertVerification -All
+```
+
+The `Enable-WSManCertVerification` functions can then turn the validation behaviour back on.
+These env vars are used by `libmi` to decide whether to validate the certificate or not.
 There is no equivalent for `-SkipRevocationCheck` as there is no revocation checks that occur at this point in time.
 
+All these functions do is set the env vars `OMI_SKIP_CA_CHECK` and `OMI_SKIP_CN_CHECK` to `1`.
 While .NET/PowerShell has an easy way to set env vars, the way it is written in .NET on non-Windows platforms is to keep a copy of the env vars being managed specifically for the .NET applications.
 This means running `$env:OMI_SKIP_CA_CHECK = '1'` will only affect applications running in the .NET space and the OMI library will not be able to see that var.
-If you wish to set or unset an env var during runtime you need to use PInvoke to call `setenv` and `unsetenv` like so:
+If you wish to set or unset an env var during runtime but do not have `PSWSMan` installed you need to use PInvoke to call `setenv` and `unsetenv` like so:
 
 ```powershell
 Add-Type -Namespace OMI -Name Environment -MemberDefinition @'
@@ -110,7 +120,17 @@ _Note: Adding a CA chain to the system store means any other application will no
 
 ### Linux
 
-There are multiple locations that is used to manage certificates on a Linux distribution.
+The [PSWSMan](https://www.powershellgallery.com/packages/PSWSMan/) includes the `Register-TrustedCertificate` function which abstracts away the distribution differences.
+To trust a particular certificate PEM you can run the following in PowerShell:
+
+```powershell
+Import-Module -Name PSWSMan
+Register-TrustedCertificate -Path ~/certs/chain.pem
+```
+
+_Note: This needs to be run as root to write the certs to the directory required._
+
+You can still manually trust a certificate by placing the cert into the required directory and running the refresh command.
 Each distribution can use different paths and commands to keep things in sync so this is a breakdown of each one.
 
 | Distro | Staging Path | Sync Command | c_rehash Package | System Trust Dir | System Trust File Bundle |

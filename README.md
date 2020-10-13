@@ -42,6 +42,9 @@ The following changes have been made:
   + Any HTTPS connections will have OpenSSL check the server's certificate like a proper HTTPS connection
   + You still need to tell PowerShell to skip the checks but those skip options are ignored in OMI
   + See [https_validation](docs/https_validation.md) for more details on this topic
++ Also create a slightly customised [libpsrpclient](https://github.com/PowerShell/psl-omi-provider)
+  + This enables WSMan on distributions that Microsoft does not include `libpsrpclient` for
+  + Also allows this fork to fix things that are outside of the OMI codebase
 
 I am not looking at fixing any underlying problems in this library or work on the server side part of OMI.
 This is purely focusing on improving the experience when using WinRM as a client on non-Windows based hosts within PowerShell.
@@ -49,7 +52,7 @@ There are no guarantees of support, you are free to change whatever you wish on 
 
 ## Build
 
-This repo tries to make it simple to build your own copy of `libmi` of the distribution of choice.
+This repo tries to make it simple to build your own copy of `libmi` and `libpsrpclient` of the distribution of choice.
 The actual upstream OMI releases are based on a "universal" Linux build but I've just setup a script that will build a library for each distribution.
 To start a build run `./build.py {distribution}`, if not distribution was supplied the script will prompt you to select one from a list.
 There are some other arguments you can supply to alter the behaviour of the build script like:
@@ -60,6 +63,8 @@ There are some other arguments you can supply to alter the behaviour of the buil
 + `--prefix`: Set the OMI install prefix path (default: `/opt/omi`). This is only useful for defining a custom config base path that the library will use
 + `--skip-clear`: Don't clear the `Unix/build-{distribution}` folder before building to speed up compilation after making changes to the code
 + `--skip-deps`: Don't install the required build dependencies
+
+Once the build step is completed it will generate the compiled libraries at `PSWSMan/lib/{distribution}/*`.
 
 The aim is to support the same distributions that PowerShell supports but so far the build tool only supports a limited number of distributions.
 The distributions that are currently setup in the `build.py` script are:
@@ -78,7 +83,7 @@ The distributions that are currently setup in the `build.py` script are:
 
 The json file contains the system packages that are required to compile OMI under the `build_deps` key.
 
-If your distribution isn't listed here or you just wish to compile the code manually this is what the build script essentially does:
+To build OMI manually you can run:
 
 ```bash
 # Install all the deps required by OMI
@@ -91,9 +96,31 @@ make
 Once finished it will generate a whole bunch of libraries required by OMI but the one we are interested in is in `Unix/build-{distribution}/lib/libmi.so`.
 You can then use `libmi.so` with PowerShell to enhance your WSMan experience on Linux.
 
+The `libpsrpclient` components are slightly more complicated to set up as it requires `libmi.so` to be compiled first.
+Have a look at the output of `--output-script` to see the steps that were done to compile this library as well.
+
 ## Installing
 
-Once build, simply copy the `libmi` library from `Unix/build-{distribution}/lib` into the PowerShell directory.
+Since the `2.0.0` release there is now a PowerShell module that can be used to install this library on known distributions.
+You can see this package at [PSGallery PSWSMan](https://www.powershellgallery.com/packages/PSWSMan/).
+To install the WSMan libs through this module you can run the following in PowerShell:
+
+```powershell
+Install-Module -Name PSWSMan
+Install-WSMan
+```
+
+_Note: This requires you to run as root to install the libs in the PowerShell dir._
+
+If you wish to build your own changes or are using a distribution that isn't set up then you can manually install it using the source module or by copying the files.
+Make sure to run this with `root` as it needs write access to the PowerShell directory.
+
+```powershell
+Import-Module -Name ./PSWSMan
+Install-WSMan
+```
+
+You can manually install the libraries by copying the files `PSWSMan/lib/{distribution}/lib*` into the PowerShell directory.
 The PowerShell directory differs based on each distribution or how it was installed.
 An easy way to determine this directory is by running `dirname "$( readlink "$( which pwsh )" )"`
 
@@ -104,10 +131,7 @@ This is also documented in the `.json` files for each distribution.
 
 A few thing to note when using the WSMan transport in PowerShell
 
-+ You always need to provide an explicit credential, no implicit auth is current available
-  + I'm hoping to add support for using a cred from the Kerberos cache in the future
 + When wanting to use Kerberos auth you need to specify the user in the UPN format, e.g. `username@DOMAIN.COM`. Do not use the Netlogon form `DOMAIN\username`
-+ If you want to use Negotiate/Kerberos auth you must also supply `-Authentication Negotiate` or `-Authentication Kerberos` to the cmdlet that uses WSMan
 + When using Basic auth you MUST connect over HTTPS and skip cert verification by adding `-SessionOption (New-PSSession -SkipCACheck -SkipCNCheck)`
   + While this tells PowerShell to skip the certificate checks, this library will still continue to do so
   + See [https_validation](docs/https_validation.md) for more details on this topic
@@ -254,6 +278,8 @@ Can't fix issues are either issues that would take a lot of effort to implement 
 
 + HTTP trace files containing the HTTP payloads sent in an exchange are placed in `{prefix}/var/log` if that folder exists
   + These trace files should only be created if the `loglevel` in the `omicli.conf` file is set to `DEBUG` or higher but currently that does not happen
++ No CredSSP authentication
+  + Implementing CredSSP authentication is quite complex but is theoretically possible
 
 ### Can't Fix
 
@@ -264,9 +290,6 @@ Can't fix issues are either issues that would take a lot of effort to implement 
   + PowerShell hardcodes a check that forces you to do `-UseSSL -SessionOption (New-PSSession -SkipCACheck -SkipCNCheck)`
   + Since the `1.2.0` release of this fork, cert validation is set to always occur regardless of the session options from PowerShell
   + See [https_validation](docs/https_validation.md) for more details on this topic
-+ Cannot add CredSSP authentication
-  + Could technically implement the auth code in this library but that won't be easy
-  + Cannot bypass the hardcoded check in PowerShell that causes a failure when `-Authentication CredSSP`
 + When using MIT krb5 as the GSSAPI backend, Kerberos delegation will only work when `/etc/krb5.conf` contains `[libdefaults]\nforwardable = true`
   + This is a problem in that library where `gss_acquire_cred_with_pass` will only acquire a forwardable ticket (required for delegation) if the `krb5.conf` contains the `forwardable = true` setting
   + Recent versions of Heimdal are not affected
