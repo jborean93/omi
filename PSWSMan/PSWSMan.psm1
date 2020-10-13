@@ -47,7 +47,8 @@ Function exec {
         $Arguments
     )
 
-    &$FilePath @Arguments 2>$err
+    (&$FilePath @Arguments | Set-Variable output) 2>&1 | Set-Variable err
+    $output
     if ($err) {
         $err | Write-Error
     }
@@ -473,7 +474,7 @@ Function Register-TrustedCertificate {
                 if (-not $certDirectory) {
                     $certDirectory = '/usr/local/etc/openssl@1.1/certs'
                 }
-                $cRehash = Join-Path -Path (Split-Path -Path $certDirectory) -ChildPath bin -AdditionalChildPath c_rehash
+                $cRehash = Join-Path -Path $opensslPath -ChildPath bin -AdditionalChildPath c_rehash
 
                 $certDirectory, $cRehash
             }
