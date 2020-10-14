@@ -10,6 +10,7 @@
     FunctionsToExport = @(
         'Disable-WSManCertVerification',
         'Enable-WSManCertVerification',
+        'Get-WSManVersion',
         'Install-WSMan',
         'Register-TrustedCertificate'
     )

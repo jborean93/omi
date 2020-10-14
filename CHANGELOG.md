@@ -8,6 +8,7 @@ It documents the changes in each of the tagged releases
 ### Breaking Changes
 
 + GitHub release artifacts are now a `.tar.gz` for each distribution containing `libmi` and `libpsrp`
++ Removed the script `tools/Get-OmiVersion.ps1` in favour of `Get-WSManVersion` that is included in the new `PSWSMan` module
 
 ### Changes
 

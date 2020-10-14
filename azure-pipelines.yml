@@ -44,19 +44,12 @@ stages:
       displayName: Build
 
     - pwsh: |
-        $version = tools/Get-OmiVersion -Path Unix/build-$(distribution)/lib/libmi.so
+        $version = (Import-Module -Name ./PSWSMan -PassThru).Version.ToString(3) + ".$(Build.BuildId)"
+        Write-Host "##vso[task.setvariable variable=BuildVersion]${version}"
+      displayName: Get module version
 
-        # Get the actual version from the release tag (v{major}.{minor}.{build}-pwsh)
-        $expectedTag = ./release.py --print-tag
-        $expectedVersion = [Version]($expectedTag.Substring(1, $expectedTag.Length - 6) + ".$(Build.BuildId)")
-
-        if ($version -ne $expectedVersion) {
-            throw "Actual version ($version) != expected version ($expectedVersion)"
-        }
-      errorActionPreference: Stop
-      displayName: Make sure the output library can be loaded in PowerShell and returns the version.
-      # Bug on Centos7 causes a failure, need to investigate more later
-      condition: and(succeeded(), ne(variables['distribution'], 'centos7'))
+    - script: ./test.py $(distribution) --docker --verify-version $(BuildVersion)
+      displayName: Check compiled libraries are loadable and are set to the correct version
 
     - task: PublishPipelineArtifact@1
       inputs:
@@ -75,17 +68,12 @@ stages:
       displayName: Build
 
     - pwsh: |
-        $version = tools/Get-OmiVersion -Path Unix/build-macOS/lib/libmi.dylib
+        $version = (Import-Module -Name ./PSWSMan -PassThru).Version.ToString(3) + ".$(Build.BuildId)"
+        Write-Host "##vso[task.setvariable variable=BuildVersion]${version}"
+      displayName: Get module version
 
-        # Get the actual version from the release tag (v{major}.{minor}.{build}-pwsh)
-        $expectedTag = ./release.py --print-tag
-        $expectedVersion = [Version]($expectedTag.Substring(1, $expectedTag.Length - 6) + ".$(Build.BuildId)")
-
-        if ($version -ne $expectedVersion) {
-            throw "Actual version ($version) != expected version ($expectedVersion)"
-        }
-      errorActionPreference: Stop
-      displayName: Make sure the output library can be loaded in PowerShell and returns the version.
+    - script: ./test.py macOS --docker --verify-version $(BuildVersion)
+      displayName: Check compiled libraries are loadable and are set to the correct version
 
     - task: PublishPipelineArtifact@1
       inputs:

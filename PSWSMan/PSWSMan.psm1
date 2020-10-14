@@ -23,12 +23,32 @@ class X509CertificateChainAttribute : ArgumentTransformationAttribute {
     }
 }
 
-Add-Type -Namespace PSWSMan -Name Environment -MemberDefinition @'
+Add-Type -Namespace PSWSMan -Name Native -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential)]
+public class PWSH_Version
+{
+    public Int32 Major;
+    public Int32 Minor;
+    public Int32 Build;
+    public Int32 Revision;
+
+    public static explicit operator Version(PWSH_Version v)
+    {
+        return new Version(v.Major, v.Minor, v.Build, v.Revision);
+    }
+}
+
 [DllImport("libc")]
 public static extern void setenv(string name, string value);
 
 [DllImport("libc")]
 public static extern void unsetenv(string name);
+
+[DllImport("libmi")]
+public static extern void MI_Version_Info(PWSH_Version version);
+
+[DllImport("libpsrpclient")]
+public static extern void PSRP_Version_Info(PWSH_Version version);
 '@
 
 Function exec {
@@ -72,7 +92,7 @@ Function setenv {
 
     # We need to use the native setenv call as .NET keeps it's own register of env vars that are separate from the
     # process block that native libraries like libmi sees. We still set the .NET env var to keep things in sync.
-    [PSWSMan.Environment]::setenv($Name, $Value)
+    [PSWSMan.Native]::setenv($Name, $Value)
     Set-Item -LiteralPath env:$Name -Value $Value    
 }
 
@@ -90,7 +110,7 @@ Function unsetenv {
 
     # We need to use the native unsetenv call as .NET keeps it's own register of env vars that are separate from the
     # process block that native libraries like libmi sees. We still unset the .NET env var to keep things in sync.
-    [PSWSMan.Environment]::unsetenv($Name)
+    [PSWSMan.Native]::unsetenv($Name)
     if (Test-Path -LiteralPath env:$Name) {
         Remove-Item -LiteralPath env:$Name -Force
     }
@@ -287,6 +307,60 @@ Function Enable-WSManCertVerification {
     }
 }
 
+Function Get-WSManVersion {
+    <#
+    .SYNOPSIS
+    Gets the versions of the installed WSMan libraries.
+
+    .DESCRIPTION
+    Gets the versions of the libmi and libpsrpclient libraries that were specified at build time. This will only
+    output a valid version if the installed libraries are ones built and installed by PSWSMan.
+
+    .EXAMPLE
+    Get-WSManVersion
+
+    .OUTPUTS PSWSMan.Version
+    [PSCustomObject]@{
+        MI = [Version] The version of libmi
+        PSRP = [Version] The version of libpsrpclient
+    }
+    #>
+    [CmdletBinding()]
+    param ()
+
+    $nameMap = [Ordered]@{
+        MI = 'mi'
+        PSRP = 'psrpclient'
+    }
+
+    $versions = [Ordered]@{
+        PSTypeName = 'PSWSMan.Version'
+    }
+
+    foreach ($map in $nameMap.GetEnumerator()) {
+        $version = [PSWSMan.Native+PWSH_Version]::new()
+        try {
+            [PSWSMan.Native]::"$($map.Key)_Version_Info"($version)
+        }
+        catch [ArgumentNullException] {
+            # .NET raises ArgumentNullException if the library or it's deps could not be found.
+            $msg = "lib$($map.Value) could not be loaded, make sure it and its dependencies are available"
+            Write-Error -Message $msg -Category NotInstalled
+            $version = $null
+        }
+        catch [EntryPointNotFoundException] {
+            # The function isn't exported which means the loaded version isn't from our custom build
+            $msg = "Custom lib$($map.Value) has not been installed, have you restarted PowerShell after installing it?"
+            Write-Error -Message $msg -Category NotInstalled
+            $version = $null
+        }
+
+        $versions.$($map.Key) = [Version]$version
+    }
+
+    [PSCustomObject]$versions
+}
+
 Function Install-WSMan {
     <#
     .SYNOPSIS
@@ -299,7 +373,8 @@ Function Install-WSMan {
     Specify the distribution to install the libraries for. If not set then the current distribution will calculated.
 
     .EXAMPLE
-    Install-WSMan
+    # Need to run as root
+    sudo pwsh -Command 'Install-WSMan'
 
     .NOTES
     Once updated, PowerShell must be restarted for the library to be usable. This is a limitation of how the libraries
@@ -604,6 +679,7 @@ $export = @{
     Function = @(
         'Disable-WSManCertVerification',
         'Enable-WSManCertVerification',
+        'Get-WSManVersion',
         'Install-WSMan',
         'Register-TrustedCertificate'
     )

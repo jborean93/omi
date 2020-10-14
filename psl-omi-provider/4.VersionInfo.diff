@@ -1,0 +1,69 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 4cc86d1..5326733 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -93,6 +93,23 @@ endif ()
+ #
+ # ##########################################
+ 
++# JBOREAN CHANGE: Specify the versions at compile time for debugging in the future.
++if (DEFINED ENV{OMI_BUILDVERSION_MAJOR})
++	add_definitions(-DPSRP_MAJOR=$ENV{OMI_BUILDVERSION_MAJOR})
++endif ()
++
++if (DEFINED ENV{OMI_BUILDVERSION_MINOR})
++	add_definitions(-DPSRP_MINOR=$ENV{OMI_BUILDVERSION_MINOR})
++endif ()
++
++if (DEFINED ENV{OMI_BUILDVERSION_PATCH})
++	add_definitions(-DPSRP_REVISION=$ENV{OMI_BUILDVERSION_PATCH})
++endif ()
++
++if (DEFINED ENV{OMI_BUILDVERSION_BUILDNR})
++	add_definitions(-DPSRP_PATCH_LEVEL=$ENV{OMI_BUILDVERSION_BUILDNR})
++endif ()
++
+ add_library(psrpclient SHARED
+ 	Client.c
+ 	xpress.c
+diff --git a/src/Client.c b/src/Client.c
+index 81480c2..aff124d 100644
+--- a/src/Client.c
++++ b/src/Client.c
+@@ -2552,3 +2552,36 @@ MI_EXPORT void WINAPI WSManConnectShellCommand(
+             NULL);
+      LogFunctionEnd("WSManConnectShellCommand", MI_RESULT_NOT_SUPPORTED);
+ }
++
++// JBOREAN CHANGE: Like omi, this exposes a similar function which we can use to get the version info
++#ifndef PSRP_MAJOR
++#define PSRP_MAJOR 0
++#endif
++
++#ifndef PSRP_MINOR
++#define PSRP_MINOR 0
++#endif
++
++#ifndef PSRP_REVISION
++#define PSRP_REVISION 0
++#endif
++
++#ifndef PSRP_PATCH_LEVEL
++#define PSRP_PATCH_LEVEL 0
++#endif
++
++typedef struct _PWSH_PSRP_Version
++{
++    int Major;
++    int Minor;
++    int Revision;
++    int PatchLevel;
++} PWSH_PSRP_Version;
++
++MI_EXPORT void WINAPI PSRP_Version_Info(PWSH_PSRP_Version *version)
++{
++    version->Major = PSRP_MAJOR;
++    version->Minor = PSRP_MINOR;
++    version->Revision = PSRP_REVISION;
++    version->PatchLevel = PSRP_PATCH_LEVEL;
++}

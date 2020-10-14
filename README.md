@@ -52,52 +52,7 @@ There are no guarantees of support, you are free to change whatever you wish on 
 
 ## Build
 
-This repo tries to make it simple to build your own copy of `libmi` and `libpsrpclient` of the distribution of choice.
-The actual upstream OMI releases are based on a "universal" Linux build but I've just setup a script that will build a library for each distribution.
-To start a build run `./build.py {distribution}`, if not distribution was supplied the script will prompt you to select one from a list.
-There are some other arguments you can supply to alter the behaviour of the build script like:
-
-+ `--debug`: Generate a debug build of the library
-+ `--docker`: Build the library in a Docker container without polluting your current environment
-+ `--output-script`: Whether to output the build bash script instead of running it
-+ `--prefix`: Set the OMI install prefix path (default: `/opt/omi`). This is only useful for defining a custom config base path that the library will use
-+ `--skip-clear`: Don't clear the `Unix/build-{distribution}` folder before building to speed up compilation after making changes to the code
-+ `--skip-deps`: Don't install the required build dependencies
-
-Once the build step is completed it will generate the compiled libraries at `PSWSMan/lib/{distribution}/*`.
-
-The aim is to support the same distributions that PowerShell supports but so far the build tool only supports a limited number of distributions.
-The distributions that are currently setup in the `build.py` script are:
-
-+ [archlinux.json](distribution_meta/archlinux.json)
-+ [centos7.json](distribution_meta/centos7.json)
-+ [centos8.json](distribution_meta/centos8.json)
-+ [debian8.json](distribution_meta/debian8.json)
-+ [debian9.json](distribution_meta/debian9.json)
-+ [debian10.json](distribution_meta/debian10.json)
-+ [fedora31.json](distribution_meta/fedora31.json)
-+ [fedora32.json](distribution_meta/fedora32.json)
-+ [macOS.json](distribution_meta/macOS.json) - Cannot be built on a Docker container, must be built on an actual macOS host
-+ [ubuntu16.04.json](distribution_meta/ubuntu16.04.json)
-+ [ubuntu18.04.json](distribution_meta/ubuntu18.04.json)
-
-The json file contains the system packages that are required to compile OMI under the `build_deps` key.
-
-To build OMI manually you can run:
-
-```bash
-# Install all the deps required by OMI
-
-cd Unix
-./configure --outputdirname=build-distribution --prefix=/opt/omi
-make
-```
-
-Once finished it will generate a whole bunch of libraries required by OMI but the one we are interested in is in `Unix/build-{distribution}/lib/libmi.so`.
-You can then use `libmi.so` with PowerShell to enhance your WSMan experience on Linux.
-
-The `libpsrpclient` components are slightly more complicated to set up as it requires `libmi.so` to be compiled first.
-Have a look at the output of `--output-script` to see the steps that were done to compile this library as well.
+See [build](docs/build.md) for more information on how to manually build these libraries.
 
 ## Installing
 
@@ -107,21 +62,22 @@ To install the WSMan libs through this module you can run the following in Power
 
 ```powershell
 Install-Module -Name PSWSMan
-Install-WSMan
-```
 
-_Note: This requires you to run as root to install the libs in the PowerShell dir._
+# Requires root access to install, Install-WSMan can be run directly if already running as root
+sudo pwsh -Command 'Install-WSMan'
+```
 
 If you wish to build your own changes or are using a distribution that isn't set up then you can manually install it using the source module or by copying the files.
 Make sure to run this with `root` as it needs write access to the PowerShell directory.
 
 ```powershell
+# Import PSWSMan from the repo source, that will source the libs from PSWSMan/lib/{distribution} of the repo
 Import-Module -Name ./PSWSMan
 Install-WSMan
 ```
 
-You can manually install the libraries by copying the files `PSWSMan/lib/{distribution}/lib*` into the PowerShell directory.
-The PowerShell directory differs based on each distribution or how it was installed.
+You can also manually install the libraries by copying the files `PSWSMan/lib/{distribution}/lib*` into the PowerShell directory.
+The location of the PowerShell directory differs based on each distribution or how it was installed.
 An easy way to determine this directory is by running `dirname "$( readlink "$( which pwsh )" )"`
 
 To enable Kerberos authentication you will need to ensure you install the Kerberos system packages that can vary between distros.
@@ -138,57 +94,7 @@ A few thing to note when using the WSMan transport in PowerShell
 
 ## Testing
 
-The [integration_environment](integration_environment) folder has a Vagrant/Ansible setup that will build 2 hosts for integration tests
-
-+ DC01 - Windows domain controller
-+ DEBIAN10 - A Linux test host with Docker and the local `omi` repo copied to `~/omi`
-
-To create this environment, run the following:
-
-```bash
-cd integration_environment
-vagrant up
-ansible-playbook main.yml -vv
-
-# To setup the host with pre-built variable from an Azure DevOps CI run, add '-e build_id=<build id>' for that run
-ansible-playbook main.yml -vv -e build_id=123
-```
-
-The `build_id` variable can be set to any build number from [Azure DevOps jborean93.omi](https://dev.azure.com/jborean93/jborean93/_build?definitionId=6&_a=summary).
-When set, the playbook will download the `libmi` library for each distribution from that run for testing.
-If you don't specify the `build_id` it will just copy across whatever libraries are located at `Unix/build-{distribution}/lib` to the Debian host.
-
-You can also specify the following `--tags` to only run a specific component of the `main.yml` playbook:
-
-+ `windows`: Setup the Windows domain controller
-+ `linux`: Setup the Debian host
-+ `build_artifacts`: Run the Azure DevOps libmi download tasks, `-e build_id=` must also be set
-
-The domain information and credentials are dependent on the values in [integration_environment/inventory.yml](integration_environment/inventory.yml).
-It defaults to a domain called `omi.test` with the test user `omi@OMI.TEST` with the password `Password01`.
-The environment comes prebuilt to allow you to run the [libmi.tests.ps1](libmi.tests.ps1) [Pester](https://github.com/pester/Pester) tests in various distribution Docker containers.
-To run tests for all the distributions run the following:
-
-```bash
-cd integration_environment
-ansible-playbook test.yml -vv
-
-# Run the tests for only 1 distribution, add '-e distribution=<distribution>'
-ansible-playbook test.yml -vv -e distribution=centos8
-```
-
-If you wish to run more tests manually in the test environment you can log onto the `DEBIAN10` host and start up your own test container with:
-
-```bash
-cd integration_environment
-vagrant ssh DEBIAN10
-
-cd ~/omi
-./test.py --docker --interactive  # Can specify your distribution using a positional arg
-```
-
-This will spin up the test environment for you with all the deps and `libmi.so` library installed.
-From there you can start up `pwsh` and run whatever you desire.
+See [testing](docs/testing.md) for more information on how to test the changes here.
 
 ## Troubleshooting
 
