@@ -406,10 +406,11 @@ Function Install-WSMan {
 
     $pwshDir = Split-Path -Path ([PSObject].Assembly.Location) -Parent
     $distributionLib = Join-Path $Script:LibPath -ChildPath $Distribution
-    $libExtension = if ($_.Name -eq 'macOS') { 'dylib' } else { 'so' }
+    $libExtension = if ($distribution -eq 'macOS') { 'dylib' } else { 'so' }
 
     $notify = $false
     Get-ChildItem -LiteralPath $distributionLib -File -Filter "*.$libExtension" | ForEach-Object -Process {
+        Write-Verbose -Message "Checking to see if $($_.Name) is installed"
         $destPath = Join-Path -Path $pwshDir -ChildPath $_.Name
 
         $change = $true
