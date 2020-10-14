@@ -72,7 +72,7 @@ stages:
         Write-Host "##vso[task.setvariable variable=BuildVersion]${version}"
       displayName: Get module version
 
-    - script: ./test.py macOS --docker --verify-version $(BuildVersion)
+    - script: ./test.py macOS --verify-version $(BuildVersion)
       displayName: Check compiled libraries are loadable and are set to the correct version
 
     - task: PublishPipelineArtifact@1

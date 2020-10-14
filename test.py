@@ -55,9 +55,11 @@ def main():
 
         # On macOS we aren't running as root in a container so this step needs sudo.
         sudo_prefix = 'sudo ' if distribution == 'macOS' else ''
-        register_cmd = "%spwsh -Command 'Import-Module ./PSWSMan; Register-TrustedCertificate -Path " \
-            "integration_environment/cert_setup/ca.pem -Verbose'" % sudo_prefix
-        script_steps.append(('Adding CA chain to system trust store', register_cmd))
+        cert_path = os.path.join('integration_environment', 'cert_setup', 'ca.pem')
+        if os.path.exists(os.path.join(OMI_REPO, cert_path)):
+            cert_cmd = "%spwsh -Command 'Import-Module ./PSWSMan; Register-TrustedCertificate -Path %s -Verbose'" \
+                % (sudo_prefix, cert_path)
+            script_steps.append(('Adding CA chain to system trust store', cert_cmd))
 
         pwsh_deps = '''cat > /tmp/pwsh-requirements.ps1 << EOL
 \$ErrorActionPreference = 'Stop'
@@ -121,6 +123,8 @@ if (\$actualVersions.MI -ne \$expectedVersion) {
 if (\$actualVersions.PSRP -ne \$expectedVersion) {
     throw "libpsrpclient version '\$(\$actualVersions.PSRP)' does not match expected version '\$expectedVersion'"
 }
+
+"SUCCESS: Versions are good"
 EOL
 
 pwsh -NoProfile -NoLogo -File /tmp/version-test.ps1''' % args.verify_version))
