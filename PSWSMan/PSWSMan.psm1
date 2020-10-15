@@ -557,7 +557,7 @@ Function Register-TrustedCertificate {
             { $_ -like 'centos*' -or $_ -like 'fedora*' } {
                 '/etc/pki/ca-trust/source/anchors', 'update-ca-trust extract'
             }
-            { $_ -like 'debian*' -or $_ -like 'ubuntu*' } {
+            { $_ -like 'alpine*' -or $_ -like 'debian*' -or $_ -like 'ubuntu*' } {
                 # While the format of the file is the same, these distributions expect the files to have a .crt extension.
                 $certExtension = 'crt'
                 '/usr/local/share/ca-certificates', 'update-ca-certificates'

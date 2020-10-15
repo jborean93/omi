@@ -5,6 +5,8 @@
     "shell": "/bin/sh",
     "build_deps": [
         "build-base",
+        "cmake",
+        "git",
         "krb5-dev",
         "linux-pam-dev",
         "make",
