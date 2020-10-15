@@ -40,7 +40,9 @@ def main():
     if args.docker and not distro_details['container_image']:
         raise ValueError("Cannot run --docker on %s as no container_image has been specified" % distribution)
 
-    script_steps = [('Getting current directory path', 'OMI_REPO="$( pwd )"\necho "Current Directory: $OMI_REPO"')]
+    script_steps = [('Getting current directory path', '''OMI_REPO="$( pwd )"
+echo "Current Directory: $OMI_REPO"
+cd Unix''')]
     output_dirname = 'build-%s' % distribution
     library_extension = 'dylib' if distribution == 'macOS' else 'so'
 
@@ -50,8 +52,7 @@ def main():
 
     # Do this in the container as selinux could have these folders be under root
     if not args.skip_clear:
-        rm_script = '''cd Unix
-if [ -d "{0}" ]; then
+        rm_script = '''if [ -d "{0}" ]; then
     echo "Found existing build folder '{0}', clearing"
     rm -rf "{0}"
 else

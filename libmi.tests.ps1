@@ -321,7 +321,7 @@ Describe "PSRemoting over HTTPS" {
         @{
             Scenario = 'Skip CA check'
             Process = { Disable-WSManCertVerification -CACheck }
-            Expected = '*Certificate hostname verification failed - set OMI_SKIP_CN_CHECK=1 to ignore.*'
+            Expected = '*Certificate hostname verification failed.*'
         }
     ) {
         .$Process
@@ -363,7 +363,7 @@ Describe "PSRemoting over HTTPS" {
         @{
             Scenario = 'Skip CA check'
             Process = { Disable-WSManCertVerification -CACheck }
-            Expected = '*Certificate hostname verification failed - set OMI_SKIP_CN_CHECK=1 to ignore.*'
+            Expected = '*Certificate hostname verification failed.*'
         },
         @{
             Scenario = 'Skip CN check'

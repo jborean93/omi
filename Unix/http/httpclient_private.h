@@ -42,6 +42,10 @@ typedef struct _HttpClient_SR_SocketData {
     SSL *ssl;
     MI_Boolean reverseOperations;   /*reverse read/write Events/Handlers */
 
+    // JBOREAN CHANGE: Store the cert verification state from the session options
+    MI_Boolean skipCACheck;
+    MI_Boolean skipCNCheck;
+
     // JBOREAN CHANGE: Added support for channel binding tokens has rearranged the connection method and now needs to
     // store the TLS channel bindings token.
     // MI_Boolean connectDone;

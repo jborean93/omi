@@ -1951,7 +1951,10 @@ static MI_Result _CreateConnectorSocket(
     HttpClient* self,
     const char* host,
     unsigned short port,
-    MI_Boolean secure)
+    MI_Boolean secure,
+    // JBOREAN CHANGE: CA/CN checks from the session options
+    MI_Boolean checkCA,
+    MI_Boolean checkCN)
 {
     Addr addr;
     MI_Result r;
@@ -2072,18 +2075,18 @@ static MI_Result _CreateConnectorSocket(
 
         SSL_set_connect_state(h->ssl);
 
-        // JBOREAN CHANGE: Set the verification options for the SSL object. This is done per SSL object so the env
-        // vars that control the validation logic are applied when the SSL object is created and not just for the
-        // global SSL_CTX object.
-        MI_Boolean skipCACheck = _GetEnvVarBool(SKIP_CA_CHECK);
-        MI_Boolean skipCNCheck = _GetEnvVarBool(SKIP_CN_CHECK);
+        // JBOREAN CHANGE: Set the verification options for the SSL object. This is done per SSL object so the options
+        // that control the validation logic are applied when the SSL object is created and not just for the global
+        // SSL_CTX object.
+        h->skipCACheck = !checkCA;
+        h->skipCNCheck = !checkCN;
         const char* hostnameToVerify = host;
 
         // Hostname verification was only added in OpenSSL 1.0.2 or newer. Debian 8 is the only host that still runs
         // with an older version so we just need to make sure we document that.
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
         // If end user doesn't want to check the CN, pass in a NULL hostname to the SSL_CTX host param.
-        if (skipCNCheck)
+        if (h->skipCNCheck)
             hostnameToVerify = NULL;
 
         X509_VERIFY_PARAM* param = SSL_get0_param(h->ssl);
@@ -2103,7 +2106,7 @@ static MI_Result _CreateConnectorSocket(
         // and OMI_SKIP_CN_CHECK is not, then the hostname will be manually verified after the SSL_connect is done. I
         // don't know of a way to disable the CA check but still get OpenSSL to verify it. In reality skipping the CA
         // check breaks the trust of checking the cert anyway so it's mostly a useless option.
-        if (!skipCACheck)
+        if (!h->skipCACheck)
         {
             SSL_set_verify(h->ssl, SSL_VERIFY_PEER, _ctxVerify);
         }
@@ -2501,7 +2504,10 @@ MI_Result _UnpackDestinationOptions(
     _Out_opt_ char **pCertFile,
     _Out_opt_ char **pPrivateKeyFile,
     _Out_opt_ char **pSessionId,
-    SSL_Options *sslOptions)
+    SSL_Options *sslOptions,
+    // JBOREAN CHANGE: unpack the check CA/CN options.
+    _Out_opt_ MI_Boolean *checkCA,
+    _Out_opt_ MI_Boolean *checkCN)
 {
   static const MI_Char   AUTH_NAME_BASIC[]   = MI_AUTH_TYPE_BASIC;
   //static const MI_Uint32 AUTH_NAME_BASIC_LEN = sizeof(AUTH_NAME_BASIC)/sizeof(MI_Char);
@@ -2771,6 +2777,30 @@ MI_Result _UnpackDestinationOptions(
             StrTcslcpy(*pSessionId, tmpval, len);
         }
     }
+
+    // JBOREAN CHANGE: Extract check CA/CN session options
+    if (checkCA)
+    {
+        if (MI_DestinationOptions_GetCertCACheck(pDestOptions, checkCA) != MI_RESULT_OK)
+        {
+            *checkCA = TRUE;
+        }
+
+        // Backwards compatibility with PowerShell versions that don't pass along the session option. Use the env var
+        // OMI_SKIP_CA_CHECK instead to skip CA checks.
+        if (_GetEnvVarBool(SKIP_CA_CHECK))
+            *checkCA = FALSE;
+    }
+    if (checkCN)
+    {
+        if (MI_DestinationOptions_GetCertCNCheck(pDestOptions, checkCN) != MI_RESULT_OK)
+        {
+            *checkCN = TRUE;
+        }
+
+        if (_GetEnvVarBool(SKIP_CN_CHECK))
+            *checkCN = FALSE;
+    }
 Done:
 
     if (result != MI_RESULT_OK)
@@ -2898,6 +2928,10 @@ MI_Result HttpClient_New_Connector2(
     MI_Uint32 password_len = 0;
     SSL_Options sslOptions;
 
+    // JBOREAN CHANGE: Store the result of CertCheckCA/CN session options.
+    MI_Boolean checkCA = TRUE;
+    MI_Boolean checkCN = TRUE;
+
     static const Probable_Cause_Data CONNECT_ERROR = {
                      ERROR_WSMAN_DESTINATION_UNREACHABLE,
                      WSMAN_CIMERROR_PROBABLE_CAUSE_CONNECTION_ERROR,
@@ -2924,8 +2958,10 @@ MI_Result HttpClient_New_Connector2(
 
     if (pDestOptions)
     {
+        // JBOREAN CHANGE: add checkCA and checkCN to the unpack method.
         r = _UnpackDestinationOptions(pDestOptions, &authtype, &username, &password, &password_len, &privacy, &transport,
-                                      &trusted_certs_dir, &cert_file, &private_key_file, &client->sessionId, &sslOptions);
+                                      &trusted_certs_dir, &cert_file, &private_key_file, &client->sessionId, &sslOptions,
+                                      &checkCA, &checkCN);
 
         if (MI_RESULT_OK != r)
         {
@@ -2976,7 +3012,8 @@ MI_Result HttpClient_New_Connector2(
 
     /* Create http connector socket. This also creates the HttpClient_SR_Data */
     {
-        r = _CreateConnectorSocket(client, host, port, secure);
+        // JBOREAN CHANGE: Pass along CA/CN check options which will be stored on the connector object.
+        r = _CreateConnectorSocket(client, host, port, secure, checkCA, checkCN);
 
         if (r != MI_RESULT_OK)
         {
@@ -3331,8 +3368,6 @@ MI_Result HttpClient_StartRequestV2(
     X509* certificate = NULL;
     int sslError = 0;
     char* sslErrorString = NULL;
-    MI_Boolean skipCACheck = _GetEnvVarBool(SKIP_CA_CHECK);
-    MI_Boolean skipCNCheck = _GetEnvVarBool(SKIP_CN_CHECK);
 
     if (client->connector->ssl)
     {
@@ -3365,12 +3400,12 @@ MI_Result HttpClient_StartRequestV2(
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
         // If OMI_SKIP_CA_CHECK was set but not OMI_SKIP_CN_CHECK we need to manually verify the hostname here.
-        if (skipCACheck && !skipCNCheck)
+        if (client->connector->skipCACheck && !client->connector->skipCNCheck)
         {
             sslError = X509_check_host(certificate, client->connector->hostname, 0, HOST_VERIFICATION_FLAGS, NULL);
             if (sslError < 1)
             {
-                const MI_Char* errorMessage = "Certificate hostname verification failed - set OMI_SKIP_CN_CHECK=1 to ignore.";
+                const MI_Char* errorMessage = "Certificate hostname verification failed.";
                 client->connector->errMsg = errorMessage;
                 LOGE2((ZT("HttpClient_StartRequestV2 - %s"), errorMessage));
                 X509_free(certificate);

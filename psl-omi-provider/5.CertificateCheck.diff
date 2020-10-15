@@ -1,0 +1,116 @@
+diff --git a/src/Client.c b/src/Client.c
+index 81480c2..71f6c38 100644
+--- a/src/Client.c
++++ b/src/Client.c
+@@ -576,6 +576,56 @@ MI_EXPORT MI_Uint32 WINAPI WSManSetSessionOption(
+             }
+             miResult = MI_RESULT_OK;
+             break;
++        case WSMAN_OPTION_SKIP_CA_CHECK:
++            __LOGD(("WSMAN_OPTION_SKIP_CA_CHECK=%u", data->number));
++            if (data->type == WSMAN_DATA_TYPE_DWORD)
++            {
++                if (data->number)
++                {
++                    if (MI_DestinationOptions_SetCertCACheck(&session->destinationOptions, MI_FALSE) != MI_RESULT_OK)
++                    {
++                        GOTO_ERROR("Failed to turn certificate CA check off", MI_RESULT_SERVER_LIMITS_EXCEEDED);
++                    }
++                }
++                else
++                {
++                    if (MI_DestinationOptions_SetCertCACheck(&session->destinationOptions, MI_TRUE) != MI_RESULT_OK)
++                    {
++                        GOTO_ERROR("Failed to turn certificate CA check on", MI_RESULT_SERVER_LIMITS_EXCEEDED);
++                    }
++                }
++            }
++            else
++            {
++                GOTO_ERROR("Failed to set CA check, invalid parameter", MI_RESULT_INVALID_PARAMETER);
++            }
++            miResult = MI_RESULT_OK;
++            break;
++        case WSMAN_OPTION_SKIP_CN_CHECK:
++            __LOGD(("WSMAN_OPTION_SKIP_CN_CHECK=%u", data->number));
++            if (data->type == WSMAN_DATA_TYPE_DWORD)
++            {
++                if (data->number)
++                {
++                    if (MI_DestinationOptions_SetCertCNCheck(&session->destinationOptions, MI_FALSE) != MI_RESULT_OK)
++                    {
++                        GOTO_ERROR("Failed to turn certificate CN check off", MI_RESULT_SERVER_LIMITS_EXCEEDED);
++                    }
++                }
++                else
++                {
++                    if (MI_DestinationOptions_SetCertCNCheck(&session->destinationOptions, MI_TRUE) != MI_RESULT_OK)
++                    {
++                        GOTO_ERROR("Failed to turn certificate CN check on", MI_RESULT_SERVER_LIMITS_EXCEEDED);
++                    }
++                }
++            }
++            else
++            {
++                GOTO_ERROR("Failed to set CN check, invalid parameter", MI_RESULT_INVALID_PARAMETER);
++            }
++            miResult = MI_RESULT_OK;
++            break;
+         default:
+             __LOGD(("ignored option %u", option));
+             miResult = MI_RESULT_OK;    /* Assume we can ignore it */
+@@ -592,6 +642,7 @@ MI_EXPORT MI_Uint32 WINAPI WSManGetSessionOptionAsDword(
+     _Inout_ MI_Uint32 *value)
+ {
+     MI_Uint32 miResult = MI_RESULT_OK;
++    MI_Boolean check = MI_FALSE;
+ 
+     LogFunctionStart("WSManGetSessionOptionAsDword");
+     switch (option)
+@@ -606,6 +657,46 @@ MI_EXPORT MI_Uint32 WINAPI WSManGetSessionOptionAsDword(
+             __LOGD(("WSMAN_OPTION_SHELL_MAX_DATA_SIZE_PER_MESSAGE_KB returning 60"));
+             break;
+ 
++        case WSMAN_OPTION_SKIP_CA_CHECK:
++            miResult = MI_DestinationOptions_GetCertCACheck(&session->destinationOptions, &check);
++
++            // If SetCertCACheck has not been called then the property is not set, treat as the flag is not set.
++            if (miResult == MI_RESULT_NO_SUCH_PROPERTY)
++            {
++                *value = 0;
++                miResult = MI_RESULT_OK;
++            }
++            else if (miResult == MI_RESULT_OK)
++            {
++                // GetCertCACheck checks if validation is enabled, we want the inverse for this option.
++                if (check)
++                    *value = 0;
++                else
++                    *value = 1;
++                __LOGD(("WSMAN_OPTION_SKIP_CA_CHECK returning %u", value));
++            }
++            break;
++
++        case WSMAN_OPTION_SKIP_CN_CHECK:
++            miResult = MI_DestinationOptions_GetCertCNCheck(&session->destinationOptions, &check);
++
++            // If SetCertCNCheck has not been called then the property is not set, treat as the flag is not set.
++            if (miResult == MI_RESULT_NO_SUCH_PROPERTY)
++            {
++                *value = 0;
++                miResult = MI_RESULT_OK;
++            }
++            else if (miResult == MI_RESULT_OK)
++            {
++                // GetCertCNCheck checks if validation is enabled, we want the inverse for this option.
++                if (check)
++                    *value = 0;
++                else
++                    *value = 1;
++                __LOGD(("WSMAN_OPTION_SKIP_CA_CHECK returning %u", value));
++            }
++            break;
++
+         default:
+             miResult = MI_RESULT_NOT_SUPPORTED;
+             __LOGD(("unknown option %u", option));

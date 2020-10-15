@@ -15,6 +15,8 @@ It documents the changes in each of the tagged releases
 + Created `PSWSMan` which is a PowerShell module uploaded to the PowerShell Gallery that can install and manage the OMI libraries for you
 + Build `libpsrpclient` as well and add it to the release artifacts
 + Added Alpine 3 to the build matrix
++ Added support for reading `New-PSSessionOption -SkipCACheck -SkipCNCheck` from PowerShell
+  + Requires changes in PowerShell to come through but it sets up the groundwork for those changes to go in
 
 ## 1.2.1 - 2020-09-26
 
