@@ -361,6 +361,7 @@
       rsync_opts:
       - --exclude=.git
       - --exclude=integration_environment/.vagrant
+      - --exclude=Unix/output  # Can be a symlink and that causes issues with synchronize
     become: no
 
   - name: template krb5.conf template for tests

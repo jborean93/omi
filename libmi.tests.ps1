@@ -60,6 +60,12 @@ BeforeAll {
         if ($Forwardable) {
             $kinitArgs.Add('-f')
         }
+
+        # Heimdal (used by macOS) requires this argument to successfully send the password to kinit
+        if ($Global:Distribution -eq 'macOS') {
+            $kinitArgs.Add('--password-file=STDIN')
+        }
+
         $kinitArgs.Add($Credential.UserName)
 
         $null = $Credential.GetNetworkCredential().Password | kinit $kinitArgs
@@ -130,12 +136,16 @@ Describe "PSWSMan tests" {
 
 Describe "Checking the compiled library's integrity" {
     It "Exposes the custom public version function" {
-        $version = &"$PSScriptRoot/tools/Get-OmiVersion.ps1"
+        $versions = Get-WSManVersion
 
-        # All versions we produce should have a major version that's 1 or more
-        # The minor versions can be anything so we can't really check those
-        $version | Should -BeOfType System.Version
-        $version.Major | Should -BeGreaterThan 0
+
+        foreach ($key in $versions.PSObject.Properties.Name) {
+            # All versions we produce should have a major version that's 1 or more
+            # The minor versions can be anything so we can't really check those
+            $version = $versions.$key
+            $version | Should -BeOfType System.Version
+            $version.Major | Should -BeGreaterThan 0
+        }
     }
 }
 
@@ -147,9 +157,24 @@ Describe "PSRemoting through WSMan" {
         $invokeParams = @{
             ComputerName = $Global:TestHostInfo.Hostname
             Credential = $Global:TestHostInfo.Credential
-            Authentication = $Authentication
             ScriptBlock = { hostname.exe }
         }
+        if ($Authentication -ne 'Negotiate') {
+            $invokeParams.Authentication = $Authentication
+        }
+
+        $actual = Invoke-Command @invokeParams
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
+    }
+
+    It "Checks that Authentication Negotiate still works as an explicit param" {
+        $invokeParams = @{
+            ComputerName = $Global:TestHostInfo.Hostname
+            Credential = $Global:TestHostInfo.Credential
+            Authentication = 'Negotiate'
+            ScriptBlock = { hostname.exe }
+        }
+
         $actual = Invoke-Command @invokeParams
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
@@ -161,9 +186,9 @@ Describe "PSRemoting through WSMan" {
         $invokeParams = @{
             ComputerName = $Global:TestHostInfo.HostnameIP
             Credential = $Global:TestHostInfo.Credential
-            Authentication = 'Negotiate'
             ScriptBlock = { hostname.exe }
         }
+
         $actual = Invoke-Command @invokeParams
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
@@ -174,8 +199,10 @@ Describe "PSRemoting through WSMan" {
     ) {
         $invokeParams = @{
             ComputerName = $Global:TestHostInfo.Hostname
-            Authentication = $Authentication
             ScriptBlock = { hostname.exe }
+        }
+        if ($Authentication -ne 'Negotiate') {
+            $invokeParams.Authentication = $Authentication
         }
 
         Invoke-Kinit -Credential $Global:TestHostInfo.Credential
@@ -195,7 +222,6 @@ Describe "PSRemoting over HTTPS" {
     $getCertParams = @{
         ComputerName = $Global:TestHostInfo.Hostname
         Credential = $Global:TestHostInfo.Credential
-        Authentication = 'Negotiate'
     }
     $Global:CertInfo = Invoke-Command @getCertParams -ScriptBlock {
         Get-ChildItem -LiteralPath Cert:\LocalMachine\My |
@@ -234,19 +260,19 @@ Describe "PSRemoting over HTTPS" {
         }
 
         Enable-WSManCertVerification -All
-        [PSWSMan.Environment]::unsetenv('SSL_CERT_FILE')
+        [PSWSMan.Native]::unsetenv('SSL_CERT_FILE')
     }
 
     AfterEach {
         Enable-WSManCertVerification -All
-        [PSWSMan.Environment]::unsetenv('SSL_CERT_FILE')
+        [PSWSMan.Native]::unsetenv('SSL_CERT_FILE')
     }
 
     # ChannelBindingToken doesn't work on SPNEGO with MIT krb5 until after 1.18.2. Fedora 32 seems to have backported
     # further changes into the package which reports 1.18.2 but in reality has the fix so we also check that.
     # macOS uses Heimdal which isn't affected by that bug.
     It "Connects over HTTPS - Negotiate" -Skip:($Global:Distribution -notin @('fedora32', 'macOS') -and $Global:KrbVersion -lt [Version]'1.18.3') {
-        $actual = Invoke-Command @CommonInvokeParams -Port $GoodCertPort -Authentication Negotiate
+        $actual = Invoke-Command @CommonInvokeParams -Port $GoodCertPort
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
@@ -256,7 +282,7 @@ Describe "PSRemoting over HTTPS" {
         $invokeParams.ComputerName = $Global:TestHostInfo.HostnameIP
 
         Disable-WSManCertVerification -CNCheck
-        $actual = Invoke-Command @invokeParams -Port $GoodCertPort -Authentication Negotiate
+        $actual = Invoke-Command @invokeParams -Port $GoodCertPort
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
@@ -266,7 +292,7 @@ Describe "PSRemoting over HTTPS" {
     }
 
     It "Trusts a certificate using the SSL_CERT_FILE env var" {
-        [PSWSMan.Environment]::setenv('SSL_CERT_FILE',
+        [PSWSMan.Native]::setenv('SSL_CERT_FILE',
             [IO.Path]::Combine($PSScriptRoot, 'integration_environment', 'cert_setup', 'ca_explicit.pem'))
         $actual = Invoke-Command @CommonInvokeParams -Port $ExplicitCertPort -Authentication Kerberos
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
@@ -379,9 +405,12 @@ Describe "Kerberos delegation" {
         $invokeParams = @{
             ComputerName = $Global:TestHostInfo.Hostname
             Credential = $Global:TestHostInfo.Credential
-            Authentication = $Authentication
             ScriptBlock = { klist.exe }
         }
+        if ($Authentication -ne 'Negotiate') {
+            $invokeParams.Authentication = $Authentication
+        }
+
         $tempConfig = [IO.Path]::GetTempFileName()
         try {
             Set-Content -LiteralPath $tempConfig -Value @'
@@ -390,10 +419,10 @@ Describe "Kerberos delegation" {
 '@
             
             $existingConfig = $env:KRB5_CONFIG
-            [PSWSMan.Environment]::setenv('KRB5_CONFIG', "$($tempConfig):$existingConfig")
+            [PSWSMan.Native]::setenv('KRB5_CONFIG', "$($tempConfig):$existingConfig")
             $actual = Invoke-Command @invokeParams
         } finally {
-            [PSWSMan.Environment]::setenv('KRB5_CONFIG', $existingConfig)
+            [PSWSMan.Native]::setenv('KRB5_CONFIG', $existingConfig)
             Remove-Item -LiteralPath $tempConfig -Force
         }
 
@@ -409,9 +438,12 @@ Describe "Kerberos delegation" {
 
         $invokeParams = @{
             ComputerName = $Global:TestHostInfo.Hostname
-            Authentication = $Authentication
             ScriptBlock = { klist.exe }
         }
+        if ($Authentication -ne 'Negotiate') {
+            $invokeParams.Authentication = $Authentication
+        }
+
         try {
             $actual = Invoke-Command @invokeParams
         } finally {
