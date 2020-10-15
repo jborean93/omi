@@ -98,8 +98,8 @@ make && make install
 cd "${oldpath}"
 rm -rf /tmp/gss-ntlmssp
 
-mkdir -p /etc/gss/mech.d
-echo "gssntlmssp_v1    1.3.6.1.4.1.311.2.2.10    /usr/local/lib/gssntlmssp/gssntlmssp.so" > /etc/gss/mech.d/ntlm.conf'''
+mkdir -p /usr/etc/gss/mech.d
+echo "gssntlmssp_v1    1.3.6.1.4.1.311.2.2.10    /usr/local/lib/gssntlmssp/gssntlmssp.so" > /usr/etc/gss/mech.d/ntlm.conf'''
 
         if 'powershell' in source_packages:
             package_command += '''\n

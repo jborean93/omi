@@ -30,7 +30,7 @@ You can also specify the following `--tags` to only run a specific component of 
 
 The domain information and credentials are dependent on the values in [integration_environment/inventory.yml](../integration_environment/inventory.yml).
 It defaults to a domain called `omi.test` with the test user `omi@OMI.TEST` with the password `Password01`.
-The environment comes prebuilt to allow you to run the [libmi.tests.ps1](libmi.tests.ps1) [Pester](https://github.com/pester/Pester) tests in various distribution Docker containers.
+The environment comes prebuilt to allow you to run the [libmi.tests.ps1](../libmi.tests.ps1) [Pester](https://github.com/pester/Pester) tests in various distribution Docker containers.
 To run tests for all the distributions run the following:
 
 ```bash
