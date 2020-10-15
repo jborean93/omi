@@ -1,14 +1,35 @@
 diff --git a/src/Client.c b/src/Client.c
-index 81480c2..71f6c38 100644
+index 81480c2..f2c06f1 100644
 --- a/src/Client.c
 +++ b/src/Client.c
-@@ -576,6 +576,56 @@ MI_EXPORT MI_Uint32 WINAPI WSManSetSessionOption(
+@@ -46,6 +46,10 @@ void MI_CALL Command_CreateInstance( Command_Self* self, MI_Context* context, co
+ void MI_CALL Command_ModifyInstance( Command_Self* self, MI_Context* context, const MI_Char* nameSpace, const MI_Char* className, const Command* modifiedInstance, const MI_PropertySet* propertySet){}
+ void MI_CALL Command_DeleteInstance( Command_Self* self, MI_Context* context, const MI_Char* nameSpace, const MI_Char* className, const Command* instanceName){}
+ 
++// Need to check if PowerShell will not require the -SkipCACheck and -SkipCNCheck options. We know this is the case if
++// WSManGetSessionOptionAsDword is called for CA/CN check as PowerShell never got those option values before it
++// supported cert validation.
++int PWSH_SUPPORTS_CERT_VALIDATION = 0;
+ 
+ /* Note: Change logging level in omiserver.conf */
+ #define SHELL_LOGGING_FILE "shellclient"
+@@ -576,6 +580,73 @@ MI_EXPORT MI_Uint32 WINAPI WSManSetSessionOption(
              }
              miResult = MI_RESULT_OK;
              break;
 +        case WSMAN_OPTION_SKIP_CA_CHECK:
 +            __LOGD(("WSMAN_OPTION_SKIP_CA_CHECK=%u", data->number));
-+            if (data->type == WSMAN_DATA_TYPE_DWORD)
++
++            // If PWSH_SUPPORTS_CERT_VALIDATION == 0 at this point then pwsh has not checked if validation is done and
++            // thus required the -SkipCACheck and -SkipCNCheck options. We don't want to pass those along to OMI so
++            // cert validation actually happens. If end users want to disable validation then they should use the env
++            // vars instead. This should be removed at some future point.
++            if (PWSH_SUPPORTS_CERT_VALIDATION == 0)
++            {
++                __LOGD(("pwsh enforces cert checks, ignoring option %u", option));
++                miResult = MI_RESULT_OK;
++            }
++            else if (data->type == WSMAN_DATA_TYPE_DWORD)
 +            {
 +                if (data->number)
 +                {
@@ -33,7 +54,14 @@ index 81480c2..71f6c38 100644
 +            break;
 +        case WSMAN_OPTION_SKIP_CN_CHECK:
 +            __LOGD(("WSMAN_OPTION_SKIP_CN_CHECK=%u", data->number));
-+            if (data->type == WSMAN_DATA_TYPE_DWORD)
++
++            // See WSMAN_OPTION_SKIP_CA_CHECK for more details
++            if (PWSH_SUPPORTS_CERT_VALIDATION == 0)
++            {
++                __LOGD(("pwsh enforces cert checks, ignoring option %u", option));
++                miResult = MI_RESULT_OK;
++            }
++            else if (data->type == WSMAN_DATA_TYPE_DWORD)
 +            {
 +                if (data->number)
 +                {
@@ -59,7 +87,7 @@ index 81480c2..71f6c38 100644
          default:
              __LOGD(("ignored option %u", option));
              miResult = MI_RESULT_OK;    /* Assume we can ignore it */
-@@ -592,6 +642,7 @@ MI_EXPORT MI_Uint32 WINAPI WSManGetSessionOptionAsDword(
+@@ -592,6 +663,7 @@ MI_EXPORT MI_Uint32 WINAPI WSManGetSessionOptionAsDword(
      _Inout_ MI_Uint32 *value)
  {
      MI_Uint32 miResult = MI_RESULT_OK;
@@ -67,11 +95,13 @@ index 81480c2..71f6c38 100644
  
      LogFunctionStart("WSManGetSessionOptionAsDword");
      switch (option)
-@@ -606,6 +657,46 @@ MI_EXPORT MI_Uint32 WINAPI WSManGetSessionOptionAsDword(
+@@ -606,6 +678,49 @@ MI_EXPORT MI_Uint32 WINAPI WSManGetSessionOptionAsDword(
              __LOGD(("WSMAN_OPTION_SHELL_MAX_DATA_SIZE_PER_MESSAGE_KB returning 60"));
              break;
  
 +        case WSMAN_OPTION_SKIP_CA_CHECK:
++            // If PowerShell calls this then we know it won't mandate the cert skip checks.
++            PWSH_SUPPORTS_CERT_VALIDATION = 1;
 +            miResult = MI_DestinationOptions_GetCertCACheck(&session->destinationOptions, &check);
 +
 +            // If SetCertCACheck has not been called then the property is not set, treat as the flag is not set.
@@ -92,6 +122,7 @@ index 81480c2..71f6c38 100644
 +            break;
 +
 +        case WSMAN_OPTION_SKIP_CN_CHECK:
++            PWSH_SUPPORTS_CERT_VALIDATION = 1;
 +            miResult = MI_DestinationOptions_GetCertCNCheck(&session->destinationOptions, &check);
 +
 +            // If SetCertCNCheck has not been called then the property is not set, treat as the flag is not set.
