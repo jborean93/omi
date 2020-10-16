@@ -40,7 +40,7 @@ The following changes have been made:
   + If the client fails to derive the CBT token, further information can be found in the [logs](#troubleshooting)
 + Turned on HTTPS certificate verification by default
   + Any HTTPS connections will have OpenSSL check the server's certificate like a proper HTTPS connection
-  + You still need to tell PowerShell to skip the checks but those skip options are ignored in OMI
+  + For PowerShell versions older than `7.2`, you still need to tell PowerShell to skip the checks but those skip options are ignored in OMI
   + See [https_validation](docs/https_validation.md) for more details on this topic
 + Also create a slightly customised [libpsrpclient](https://github.com/PowerShell/psl-omi-provider)
   + This enables WSMan on distributions that Microsoft does not include `libpsrpclient` for
@@ -192,10 +192,6 @@ Can't fix issues are either issues that would take a lot of effort to implement 
 + Cannot do basic auth over HTTP
   + PowerShell hardcodes a check that stops you from doing this for security reasons
   + Really why would you want to do this anyway
-+ The session options `-SessionOption (New-PSSession -SkipCACheck -SkipCNCheck)` are ignored and OMI will always verify the HTTPS certificate
-  + PowerShell hardcodes a check that forces you to do `-UseSSL -SessionOption (New-PSSession -SkipCACheck -SkipCNCheck)`
-  + Since the `1.2.0` release of this fork, cert validation is set to always occur regardless of the session options from PowerShell
-  + See [https_validation](docs/https_validation.md) for more details on this topic
 + When using MIT krb5 as the GSSAPI backend, Kerberos delegation will only work when `/etc/krb5.conf` contains `[libdefaults]\nforwardable = true`
   + This is a problem in that library where `gss_acquire_cred_with_pass` will only acquire a forwardable ticket (required for delegation) if the `krb5.conf` contains the `forwardable = true` setting
   + Recent versions of Heimdal are not affected

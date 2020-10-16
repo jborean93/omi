@@ -24,21 +24,32 @@ $invokeParams = @{
     ComputerName = 'hostname.domain.com'
     Authentication = 'Negotiate'
     UseSSL = $true
+    # Requried for versions older than PowerShell 7.2.0
     SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
 }
 Invoke-Command @invokeParams
 ```
 
-There's a hardcoded check in PowerShell that makes sure you have the `-SkipCACheck` and `-SkipCNCheck` session option when creating a HTTPS endpoint.
+Currently there is a hardcoded check in PowerShell that makes sure you have the `-SkipCACheck` and `-SkipCNCheck` session option when creating a HTTPS endpoint.
 This is because historically the upstream OMI library never did any validation so PowerShell wanted to make sure you were explicitly aware that you are skipping one of the core tenants of a HTTPS connection.
+Since the `1.2.0` release of this fork, certificate validation has been implemented and enabled by default, regardless of the `-SkipCACheck` and `-SkipCNCheck`.
+Since the `2.0.0` release of this fork, the skip checks are also read from PowerShell if you are running PowerShell `7.2.0` or newer.
+The hardcoded check for making sure the `-SkipCACheck` and `-SkipCNCheck` options have also been removed from PowerShell `7.2.0` if using this fork.
 
-Since the `1.2.0` release of this fork, certificate validation has been implemented and enabled by default.
-The `-SkipCACheck` and `-SkipCNCheck` session options must still be set in PowerShell but they are ignored by OMI (because they are never passed through).
-This means that connecting to a HTTPS endpoint using this library will always validate the server's certificate regardless of the options passed in by PowerShell.
+Here is a matrix of PowerShell and OMI versions and how it controls the cert validation behaviour:
+
+|  | pwsh < 7.2 | pwsh >= 7.2 |
+|-|-|-|
+| MI <1.2 | no verification | no verification |
+| MI 1.2 | verifies, skip with env | verifies, skip with env |
+| MI >=2.0 | verifies, skip with env | verifies, skip with session options |
+
+TLDR: If using MI `>=1.2` then your certs are being validated and can only be skipped with env vars.
+If using MI `>=2.0` with PowerShell `>=7.2` then the skip session options can be omitted and when present can control the validation behaviour.
 
 ## Disabling Validation
 
-If you have installed the `PSWSMan` library you can disable certificate checks with the following functions:
+If you have installed the `PSWSMan` library you can disable certificate checks globally with the following functions:
 
 ```powershell
 # Do not check if the cert has been signed and issued by a authority the client trusts
@@ -80,14 +91,6 @@ public static extern void unsetenv(string name);
 You can also set the var when you start the process, you only need to use the PInvoke process in PowerShell if you wish to set/change/unset one of these vars once the process has started.
 Because this behaviour is set by an environment variable, it is globally set for a process and cannot be adjusted for an individual connection.
 You can turn it off and on during the process using the method above.
-
-## Future Changes in PowerShell
-
-The end goal would be to remove the requirement for setting `-SkipCACheck` and `-SkipCNCheck` in PowerShell and actually have those options control the verification behaviour in this OMI library.
-This is not an easy task as the current behaviour in PowerShell is designed to address limitations in the OMI library that it ships.
-Maybe in the future if this fork of OMI gets shipped with PowerShell we can drop the requirement for setting those options and actually have them get passed through to OMI.
-
-For now I'm happy that this fork will validate the certificate by default making a HTTPS connection more secure but still provide a way to opt out using the env vars.
 
 ## Trusting a CA Chain
 
