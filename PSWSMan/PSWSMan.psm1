@@ -423,6 +423,7 @@ Function Install-WSMan {
 
         if ($change) {
             Write-Verbose -Message "Installing $($_.Name) to '$pwshDir'"
+            Copy-Item -LiteralPath $destPath -Destination "$($destPath).bak" -Force
             Copy-Item -LiteralPath $_.Fullname -Destination $destPath
             $notify = $true
         }

@@ -1,0 +1,30 @@
+{
+    "container_image": "fedora:33",
+    "package_manager": "dnf",
+    "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
+    "build_deps": [
+        "cmake",
+        "bind-utils",
+        "gcc",
+        "gcc-c++",
+        "git",
+        "krb5-devel",
+        "make",
+        "openssl",
+        "openssl-devel",
+        "pam-devel",
+        "redhat-lsb-core",
+        "rpm-build",
+        "rpm-devel",
+        "which"
+    ],
+    "test_deps": [
+        "gssntlmssp",
+        "krb5-devel",
+        "krb5-workstation",
+        "powershell",
+        "which"
+    ],
+    "cert_staging_dir": "/etc/pki/ca-trust/source/anchors",
+    "cert_staging_cmd": "update-ca-trust extract"
+}

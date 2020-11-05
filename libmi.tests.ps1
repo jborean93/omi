@@ -132,12 +132,22 @@ Describe "PSWSMan tests" {
         $ev.Count | Should -Be 1
         $ev[0].Exception.Message | Should -BeLike "Unsupported distribution 'invalid'. Supported distributions: *"
     }
+
+    It "Created backups of <Name> after installation" -TestCases @(
+        @{ Name = 'libmi' },
+        @{ Name = 'libpsrpclient' }
+    ) {
+        $pwshDir = Split-Path -Path ([PSObject].Assembly.Location) -Parent
+        $libExtension = if ($Global:Distribution -eq 'macOS') { 'dylib' } else { 'so' }
+        $libName = "$($Name).$($libExtension).bak"
+
+        Test-Path -LiteralPath (Join-Path -Path $pwshDir -ChildPath $libName) -PathType Leaf | Should -Be $true
+    }
 }
 
 Describe "Checking the compiled library's integrity" {
     It "Exposes the custom public version function" {
         $versions = Get-WSManVersion
-
 
         foreach ($key in $versions.PSObject.Properties.Name) {
             # All versions we produce should have a major version that's 1 or more

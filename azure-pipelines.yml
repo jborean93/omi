@@ -30,6 +30,8 @@ stages:
           distribution: fedora31
         Fedora32:
           distribution: fedora32
+        Fedora33:
+          distribution: fedora33
         Ubuntu16.04:
           distribution: ubuntu16.04
         Ubuntu18.04:

@@ -3,6 +3,11 @@
 This is the changelog for this fork of OMI.
 It documents the changes in each of the tagged releases
 
+## 2.0.1 - TBD
+
++ Added `fedora33` distribution
++ Make a backup of the original library files in the PowerShell dir before installing the forked copies
+
 ## 2.0.0 - 2020-10-17
 
 ### Breaking Changes
