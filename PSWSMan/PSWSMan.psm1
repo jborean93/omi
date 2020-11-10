@@ -423,7 +423,12 @@ Function Install-WSMan {
 
         if ($change) {
             Write-Verbose -Message "Installing $($_.Name) to '$pwshDir'"
-            Copy-Item -LiteralPath $destPath -Destination "$($destPath).bak" -Force
+
+            if (Test-Path -LiteralPath $destPath) {
+                Write-Verbose -Message "Creating backup of $($_.Name) to $($_.Name).bak"
+                Copy-Item -LiteralPath $destPath -Destination "$($destPath).bak" -Force
+            }
+            
             Copy-Item -LiteralPath $_.Fullname -Destination $destPath
             $notify = $true
         }
