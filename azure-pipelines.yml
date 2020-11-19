@@ -36,6 +36,8 @@ stages:
           distribution: ubuntu16.04
         Ubuntu18.04:
           distribution: ubuntu18.04
+        Ubuntu20.04:
+          distribution: ubuntu20.04
         Archlinux:
           distribution: archlinux
         Alpine3:
