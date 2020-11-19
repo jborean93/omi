@@ -1,0 +1,27 @@
+{
+    "container_image": "ubuntu:20.04",
+    "package_manager": "apt",
+    "microsoft_repo": "https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb",
+    "build_deps": [
+        "cmake",
+        "g++",
+        "git",
+        "libkrb5-dev",
+        "libpam-dev",
+        "libssl-dev",
+        "lsb-release",
+        "make",
+        "openssl",
+        "pkg-config"
+    ],
+    "test_deps": [
+        "gcc",
+        "gss-ntlmssp",
+        "krb5-user",
+        "libkrb5-dev",
+        "powershell"
+    ],
+    "cert_staging_dir": "/usr/local/share/ca-certificates",
+    "cert_staging_cmd": "update-ca-certificates",
+    "cert_extension": "crt"
+}

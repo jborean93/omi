@@ -44,6 +44,7 @@ The distributions that are currently setup in the `build.py` script are:
 + [macOS.json](../distribution_meta/macOS.json) - Cannot be built on a Docker container, must be built on an actual macOS host
 + [ubuntu16.04.json](../distribution_meta/ubuntu16.04.json)
 + [ubuntu18.04.json](../distribution_meta/ubuntu18.04.json)
++ [ubuntu20.04.json](../distribution_meta/ubuntu20.04.json)
 
 The json file contains all the information required for `build.py` to install the depedencies and build the libraries.
 
