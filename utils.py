@@ -123,7 +123,7 @@ ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh'''
 
         package_command = build_multiline_command(package_boilerplate[package_manager], brew_packages)
         if cask_packages:
-            package_command += '\n\n' + build_multiline_command('brew cask install', cask_packages)
+            package_command += '\n\n' + build_multiline_command('brew install --cask', cask_packages)
 
     elif package_manager == 'pacman':
         pacman_packages = set()
