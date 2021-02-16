@@ -11,3 +11,4 @@ Here is a list of patches that are applied during the build and what they are fo
 + [3.FixUnitializedVar.diff](3.FixUnitializedVar.diff) - Newer gcc compilers will fail because these vars didn't have a default value and the behaviour is undefined
 + [4.VersionInfo.diff](4.VersionInfo.diff) - Adds `PSRP_Version_Info` as an exported function and relevant build time changes to expose the version defined at build time
 + [5.CertificateCheck.diff](5.CertificateCheck.diff) - Pass along `-SkipCACheck` and `-SkipCNCheck` from PowerShell to support cert verification skips per connection
++ [6.NoChkshlibBuild.diff](6.NoChkshlibBuild.diff) - Remove requirement on uneeded OMI binary for the build

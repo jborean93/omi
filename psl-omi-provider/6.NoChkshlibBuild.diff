@@ -1,0 +1,19 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 4cc86d1..05a96ff 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -125,10 +125,11 @@ target_include_directories(psrpclient PRIVATE
+ 	${OMI}/common
+ 	${OPENSSL_INCLUDE_DIRS})
+ 
++# JBOREAN CHANGE: We don't need this for PowerShell
+ # This custom command uses a tool from OMI that tests all library functions 
+ # can be resolved. If it fails it means we are missing a dependent library
+-add_custom_command(TARGET psrpclient POST_BUILD
+-	COMMAND ${OUR_LD_PATH}=${OMI_OUTPUT}/lib && ${OMI_OUTPUT}/bin/chkshlib $<TARGET_FILE:psrpclient>)
++#add_custom_command(TARGET psrpclient POST_BUILD
++#	COMMAND ${OUR_LD_PATH}=${OMI_OUTPUT}/lib && ${OMI_OUTPUT}/bin/chkshlib $<TARGET_FILE:psrpclient>)
+ 
+ 
+ # ##########################################
+
