@@ -9,10 +9,13 @@ ifeq ($(OS),DARWIN)
   GENERATE_ORIGIN=1
 endif
 
-ifeq ($(GENERATE_ORIGIN),1)
-	DIRECTORIES = release origin
-else 
-	DIRECTORIES = release
-endif
+# JBOREAN CHANGE: We only need release for PowerShell
+DIRECTORIES = release
+
+#ifeq ($(GENERATE_ORIGIN),1)
+#	DIRECTORIES = release origin
+#else
+#	DIRECTORIES = release
+#endif
 
 include $(ROOT)/mak/rules.mak

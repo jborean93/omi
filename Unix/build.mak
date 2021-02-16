@@ -51,29 +51,30 @@ endif
 ##
 ##==============================================================================
 
+# JBOREAN CHANGE: Cut down on what is compiled to only what PowerShell needs
 DIRECTORIES =
-DIRECTORIES += chkshlib
-DIRECTORIES += tools
+#DIRECTORIES += chkshlib
+#DIRECTORIES += tools
 
 DIRECTORIES += pal
-DIRECTORIES += pal/nitspal
+#DIRECTORIES += pal/nitspal
 
-DIRECTORIES += nits
+#DIRECTORIES += nits
 
-DIRECTORIES += ut
+#DIRECTORIES += ut
 ifeq ($(COMPILER),GNU)
 DIRECTORIES += strhash
 endif
-DIRECTORIES += mof
+#DIRECTORIES += mof
 DIRECTORIES += sock
 DIRECTORIES += base
-DIRECTORIES += oi/gen_c/common
-DIRECTORIES += oi/gen_c/cmdline
+#DIRECTORIES += oi/gen_c/common
+#DIRECTORIES += oi/gen_c/cmdline
 DIRECTORIES += wql
-DIRECTORIES += gen
-DIRECTORIES += provreg
-DIRECTORIES += provmgr
-DIRECTORIES += disp
+#DIRECTORIES += gen
+#DIRECTORIES += provreg
+#DIRECTORIES += provmgr
+#DIRECTORIES += disp
 DIRECTORIES += omi_error
 DIRECTORIES += miapi
 DIRECTORIES += protocol
@@ -81,29 +82,29 @@ DIRECTORIES += http
 DIRECTORIES += wsman
 DIRECTORIES += xml
 DIRECTORIES += xmlserializer
-DIRECTORIES += omiutils
+#DIRECTORIES += omiutils
 DIRECTORIES += codec/mof
 DIRECTORIES += codec/mof/parser
 DIRECTORIES += midll
-DIRECTORIES += providers
-DIRECTORIES += micxx
-DIRECTORIES += omiclient
-DIRECTORIES += configeditor
-DIRECTORIES += cli
-DIRECTORIES += omireg
-DIRECTORIES += check
-DIRECTORIES += samples
+#DIRECTORIES += providers
+#DIRECTORIES += micxx
+#DIRECTORIES += omiclient
+#DIRECTORIES += configeditor
+#DIRECTORIES += cli
+#DIRECTORIES += omireg
+#DIRECTORIES += check
+#DIRECTORIES += samples
 
-ifndef DISABLE_INDICATION
-DIRECTORIES += indication/common
-DIRECTORIES += indication/indimgr
-endif
+#ifndef DISABLE_INDICATION
+#DIRECTORIES += indication/common
+#DIRECTORIES += indication/indimgr
+#endif
 
-ifdef CONFIG_SINGLEIMAGE
-  DIRECTORIES += image
-else
-  DIRECTORIES += server agent engine
-endif
+#ifdef CONFIG_SINGLEIMAGE
+#  DIRECTORIES += image
+#else
+#  DIRECTORIES += server agent engine
+#endif
 
 ifeq ($(ENABLE_NATIVE_KITS),1)
   DIRECTORIES += installbuilder
@@ -418,3 +419,4 @@ oigenc:
 ##==============================================================================
 
 CACHEGRIND_ARGS = $(BINDIR)/omiserver -i --testopts -l
+

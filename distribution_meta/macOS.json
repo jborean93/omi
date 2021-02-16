@@ -3,6 +3,7 @@
     "package_manager": "brew",
     "microsoft_repo": "",
     "build_deps": [
+        "cmake",
         "openssl@1.1",
         "pkg-config"
     ],
