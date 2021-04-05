@@ -29,6 +29,76 @@ from utils import (
 )
 
 
+def compile_openssl(openssl_version, script_steps, configure_args, distribution):
+    build_path = '/tmp/openssl-%s-build' % openssl_version
+
+    if distribution.startswith('macOS'):
+        compile_arg = 'MACOSX_DEPLOYMENT_TARGET=10.15 ./Configure darwin64-x86_64-cc shared'
+    else:
+        compile_arg = 'CFLAGS=-fPIC ./config shared'
+
+    jobs = ''
+    if openssl_version.startswith('1.0'):
+        # OpenSSL 1.0.x is problematic with concurrently builds so set the max to just 1.
+        jobs = '1'
+
+    compile_openssl = '''wget \
+    -q -O '/tmp/openssl-{0}.tar.gz' \
+    'https://www.openssl.org/source/openssl-{0}.tar.gz'
+
+tar -xf '/tmp/openssl-{0}.tar.gz' -C /tmp
+cd '/tmp/openssl-{0}'
+
+{1} \
+    '--prefix={2}'
+make -j{3}
+make install_sw'''.format(openssl_version, compile_arg, build_path, jobs)
+
+    script_steps.append(('Compiling OpenSSL %s' % openssl_version, compile_openssl))
+
+    # TODO: Enable this once AZP opens up the Big Sur agents so we can actually run this in CI.
+    if distribution.startswith('macOS') and False:
+        # We want to create a fat (x64 and arm) library so we can compile mi for arm.
+        compile_openssl = '''
+MACOSX_DEPLOYMENT_TARGET=10.15 ./Configure \
+    darwin64-arm64-cc shared \
+    '--prefix={0}-arm64'
+make clean
+make -j
+make install_sw
+
+echo "Combining x86_64 and arm64 binaries"
+
+LIB_DIR='{0}'
+
+# Loops through all the .a and .dylibs in lib (that aren't symlinks) and combines them
+for file in "${{LIB_DIR}}"/lib/lib*; do
+    if [ -f "${{file}}" ] && [ ! -L "${{file}}" ]; then
+        FILENAME="$( basename "${{file}}" )"
+        echo "Combining OpenSSL lib ${{file}}"
+        lipo -create "${{file}}" "${{LIB_DIR}}-arm64/lib/${{FILENAME}}" -output "${{file}}"
+    fi
+done
+
+lipo -create \
+    '{0}/bin/openssl' \
+    '{0}-arm64/bin/openssl' \
+    -output '{0}/bin/openssl'
+'''.format(build_path)
+        script_steps.append(('Compiling OpenSSL for arm64', compile_openssl))
+
+    script_steps.append(('Finalise OpenSSL install', '''export OPENSSL_ROOT_DIR="{0}"
+cd "${{OMI_REPO}}/Unix"
+'''.format(build_path)))
+
+    configure_args.extend([
+        '--openssl="{0}/bin/openssl"'.format(build_path),
+        '--opensslcflags="-I{0}/include"'.format(build_path),
+        '--openssllibs="-L{0}/lib -lssl -lcrypto -lz"'.format(build_path),
+        '--openssllibdir="{0}/lib"'.format(build_path),
+    ])
+
+
 def main():
     """Main program body."""
     args = parse_args()
@@ -44,7 +114,7 @@ def main():
 echo "Current Directory: $OMI_REPO"
 cd Unix''')]
     output_dirname = 'build-%s' % distribution
-    library_extension = 'dylib' if distribution == 'macOS' else 'so'
+    library_extension = 'dylib' if distribution.startswith('macOS') else 'so'
 
     if not args.skip_deps:
         dep_script = build_package_command(distro_details['package_manager'], distro_details['build_deps'])
@@ -70,22 +140,29 @@ fi'''.format(output_dirname)
     # macOS on Azure Pipelines has OpenSSL 1.0.2 installed but we want to compile against the OpenSSL version in our
     # dep list which is openssl@1.1. Because the deps are installed at runtime we need our build script to find that
     # value and add to our configure args.
-    if distribution == 'macOS':
-        script_steps.append(('Getting OpenSSL locations for macOS',
-            'OPENSSL_PREFIX="$(brew --prefix openssl@1.1)"\necho "Using OpenSSL at \'${OPENSSL_PREFIX}\'"'))
+    if distribution.startswith('macOS'):
+        if distro_details['openssl_version']:
+            compile_openssl(distro_details['openssl_version'], script_steps, configure_args, distribution)
 
-        configure_args.extend([
-            '--openssl="${OPENSSL_PREFIX}/bin/openssl"',
-            '--opensslcflags="-I${OPENSSL_PREFIX}/include"',
-            '--openssllibs="-L${OPENSSL_PREFIX}/lib -lssl -lcrypto -lz"',
-            '--openssllibdir="${OPENSSL_PREFIX}/lib"',
-        ])
+        else:
+            script_steps.append(('Getting OpenSSL locations for macOS',
+                'OPENSSL_PREFIX="$(brew --prefix openssl@1.1)"\necho "Using OpenSSL at \'${OPENSSL_PREFIX}\'"'))
+
+            configure_args.extend([
+                '--openssl="${OPENSSL_PREFIX}/bin/openssl"',
+                '--opensslcflags="-I${OPENSSL_PREFIX}/include"',
+                '--openssllibs="-L${OPENSSL_PREFIX}/lib -lssl -lcrypto -lz"',
+                '--openssllibdir="${OPENSSL_PREFIX}/lib"',
+            ])
+
+    elif distro_details['openssl_version']:
+        compile_openssl(distro_details['openssl_version'], script_steps, configure_args, distribution)
 
     configure_script = '''echo -e "Running configure with:\\n\\t{0}"
 {1}'''.format('\\n\\t'.join(configure_args), build_multiline_command('./configure', configure_args))
 
     script_steps.append(('Running configure', configure_script))
-    script_steps.append(('Running make', 'make'))
+    script_steps.append(('Running make', 'make -j'))
     script_steps.append(('Copying libmi to pwsh build dir',
         '''if [ -d '../PSWSMan/lib/{0}' ]; then
     echo "Clearing existing build folder at 'PSWSMan/lib/{0}'"
@@ -128,13 +205,51 @@ cmake -DCMAKE_BUILD_TYPE={1} .
 make psrpclient
 cp libpsrpclient.* "${{OMI_REPO}}/PSWSMan/lib/{2}/"'''.format(output_dirname, built_type, distribution)))
 
-    if distribution == 'macOS':
+    if distribution.startswith('macOS'):
         script_steps.append(('Patch libmi dylib path for libpsrpclient',
-            '''echo "Patching '${{OMI_REPO}}/PSWSMan/lib/{1}/libpsrpclient.dylib' libmi location"
+            '''echo "Patching '${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib' libmi location"
 install_name_tool -change \\
-    '{0}/lib/libmi.dylib' \\
-    '@executable_path/libmi.dylib' \\
-    "${{OMI_REPO}}/PSWSMan/lib/{1}/libpsrpclient.dylib"'''.format(args.prefix, distribution)))
+    '@rpath/libmi.dylib' \\
+    '@loader_path/libmi.dylib' \\
+    "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib"'''.format(distribution)))
+
+        if distro_details['openssl_version']:
+            openssl_version = distro_details['openssl_version']
+
+        script_steps.append(('Patch OpenSSL dylib path for libmi',
+        '''echo "Patching '${{OMI_REPO}}/PSWSMan/lib/{1}/libmi.dylib' SSL locations"
+
+LIB_DIR='/tmp/openssl-{0}-build'
+
+# Loops through all the .dylibs in lib (that aren't symlinks) and uses that as the path to change
+for file in "${{LIB_DIR}}"/lib/lib*.dylib; do
+    if [ -f "${{file}}" ] && [ ! -L "${{file}}" ]; then
+        FILENAME="$( basename "${{file}}" )"
+        echo "Setting relative link path for ${{FILENAME}}"
+
+        install_name_tool -change \\
+            "${{file}}" \\
+            "@loader_path/${{FILENAME}}" \\
+            "${{OMI_REPO}}/PSWSMan/lib/{1}/libmi.dylib"
+    fi
+done'''.format(openssl_version, distribution)))
+
+        script_steps.append(('Output linked information',
+            '''echo "libpsrpclient links"
+otool -L "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib"
+
+echo "libmi links"
+otool -L "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.dylib"
+'''.format(distribution)))
+
+    else:
+        script_steps.append(('Output linked information',
+            '''echo "libpsrpclient links"
+ldd "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.so" || true
+
+echo "libmi links"
+ldd "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.so" || true
+'''.format(distribution)))
 
     build_script = build_bash_script(script_steps)
 

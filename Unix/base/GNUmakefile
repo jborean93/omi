@@ -7,45 +7,47 @@ else
 LIBRARY = base
 endif
 
+# JBOREAN CHANGE: We can cut down what is not needed for the WSMan client
+# Removed:
+#   classdecl.c
+#   env.c
+#   fieldprint.c
+#   getopt.c
+#   indent.c
+#   instanceprint.c
+#   interaction.c
+#   messagesprint.c
+#   miextras.c
+#   multiplex.c
+#   parameters.c
+#   pidfile.c
+#   process.c
+#   ptrarray.c
+#   random.c
+#   stringarray.c
 SOURCES = \
     base.c \
     batch.c \
     buf.c \
     class.c \
-    classdecl.c \
     instance.c \
-    instanceprint.c \
     messages.c \
-    messagesprint.c \
-    interaction.c \
     list.c \
-    parameters.c \
     result.c \
     schemadecl.c \
-    stringarray.c \
     types.c \
     packing.c \
     helpers.c \
     naming.c \
     field.c \
-    fieldprint.c \
-    env.c \
-    process.c \
-    pidfile.c \
     paths.c \
     strand.c \
     strarr.c \
     user.c \
     credcache.c \
     conf.c \
-    getopt.c \
     base64.c \
-    indent.c \
-    miextras.c \
-    multiplex.c \
-    ptrarray.c \
     timer.c \
-    random.c \
     $(TOP)/sock/sock.c \
     $(TOP)/sock/addr.c \
     $(TOP)/sock/selector.c

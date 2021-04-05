@@ -159,7 +159,8 @@ If you don't wish to add the CA chain to the system wide trust store you should 
 ### macOS
 
 Cert validation on macOS has it's own quirks that set it apart from Linux.
-The OMI library is linked against OpenSSL that is installed from `brew` and not the TLS library that comes builtin to macOS.
+The OMI library is typically linked against OpenSSL that is installed from `brew` and not the TLS library that comes builtin to macOS.
+Since `PSWSMan>=2.2.0` it could now be linked to the `port` installed OpenSSL if `brew` is either not installed or has not installed the `openssl` package.
 When you install `openssl` with `brew`, the install process will take a copy of the existing system keychain and place it into a directory it itself uses.
 Any libraries that are linked to this OpenSSL install will use that directory and not the system keychain.
 Ultimately this means that it will trust any CAs that were present in the macOS keychain when OpenSSL was installed but if you wish to add any more CAs you need to add it yourself.

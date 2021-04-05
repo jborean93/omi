@@ -12,3 +12,4 @@ Here is a list of patches that are applied during the build and what they are fo
 + [4.VersionInfo.diff](4.VersionInfo.diff) - Adds `PSRP_Version_Info` as an exported function and relevant build time changes to expose the version defined at build time
 + [5.CertificateCheck.diff](5.CertificateCheck.diff) - Pass along `-SkipCACheck` and `-SkipCNCheck` from PowerShell to support cert verification skips per connection
 + [6.NoChkshlibBuild.diff](6.NoChkshlibBuild.diff) - Remove requirement on uneeded OMI binary for the build
++ [7.CMakeLanguage.diff](7.CMakeLanguage.diff) - Explicitly set cmake language to C to disable C++ checks and set OpenSSL path for universal builds

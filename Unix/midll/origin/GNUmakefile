@@ -1,7 +1,8 @@
 TOP = ../..
 include $(TOP)/config.mak
 
-CSHLIBRARY = mi_origin
+# JBOREAN CHANGE: We just want to simplify things and set this to mi to match release
+CSHLIBRARY = mi
 
 SOURCES = \
 	../gnumain.c

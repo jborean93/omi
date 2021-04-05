@@ -10,6 +10,59 @@ trigger:
 stages:
 - stage: Build
   jobs:
+  
+  - job: Linux
+    pool:
+      vmImage: ubuntu-18.04
+    strategy:
+      matrix:
+        glibc-1.0:
+          distribution: glibc-1.0
+        glibc-1.1:
+          distribution: glibc-1.1
+        glibc-3:
+          distribution: glibc-3
+        musl-1.1:
+          distribution: musl-1.1
+        musl-3:
+          distribution: musl-3
+
+    steps:
+    - script: ./build.py $(distribution) --docker
+      env:
+        OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
+      displayName: Build
+
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: PSWSMan/lib/$(distribution)/
+        artifactName: $(distribution)
+      displayName: Publish artifacts
+
+  - job: macOS
+    pool:
+      vmImage: macOS-10.15
+    strategy:
+      matrix:
+        macOS-1.1:
+          distribution: macOS-1.1
+        macOS-3:
+          distribution: macOS-3
+
+    steps:
+    - script: ./build.py $(distribution)
+      env:
+        OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
+      displayName: Build
+
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: PSWSMan/lib/$(distribution)/
+        artifactName: $(distribution)
+      displayName: Publish artifacts
+
+- stage: Test
+  jobs:
 
   - job: Linux
     pool:
@@ -20,14 +73,10 @@ stages:
           distribution: centos7
         CentOS8:
           distribution: centos8
-        Debian8:
-          distribution: debian8
         Debian9:
           distribution: debian9
         Debian10:
           distribution: debian10
-        Fedora31:
-          distribution: fedora31
         Fedora32:
           distribution: fedora32
         Fedora33:
@@ -44,10 +93,10 @@ stages:
           distribution: alpine3
 
     steps:
-    - script: ./build.py $(distribution) --docker
-      env:
-        OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
-      displayName: Build
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        source: current
+        path: PSWSMan/lib
 
     - pwsh: |
         $version = (Import-Module -Name ./PSWSMan -PassThru).Version.ToString(3) + ".$(Build.BuildId)"
@@ -57,35 +106,23 @@ stages:
     - script: ./test.py $(distribution) --docker --verify-version $(BuildVersion)
       displayName: Check compiled libraries are loadable and are set to the correct version
 
-    - task: PublishPipelineArtifact@1
-      inputs:
-        targetPath: PSWSMan/lib/$(distribution)/
-        artifactName: $(distribution)
-      displayName: Publish artifacts
-
   - job: macOS
     pool:
       vmImage: macOS-10.15
 
     steps:
-    - script: ./build.py macOS
-      env:
-        OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
-      displayName: Build
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        source: current
+        path: PSWSMan/lib
 
     - pwsh: |
         $version = (Import-Module -Name ./PSWSMan -PassThru).Version.ToString(3) + ".$(Build.BuildId)"
         Write-Host "##vso[task.setvariable variable=BuildVersion]${version}"
       displayName: Get module version
 
-    - script: ./test.py macOS --verify-version $(BuildVersion)
+    - script: ./test.py macOS-1.1 --verify-version $(BuildVersion)
       displayName: Check compiled libraries are loadable and are set to the correct version
-
-    - task: PublishPipelineArtifact@1
-      inputs:
-        targetPath: PSWSMan/lib/macOS/
-        artifactName: macOS
-      displayName: Publish artifacts
 
 - stage: Publish
   jobs:

@@ -9,7 +9,6 @@
         "glibc",
         "inetutils",
         "krb5",
-        "lsb-release",
         "make",
         "openssl",
         "pkgconf",
@@ -23,6 +22,7 @@
         "doxygen",
         "krb5",
         "libwbclient",
+        "openssl",
         "which"
     ],
     "cert_staging_dir": "/etc/ca-certificates/trust-source/anchors",

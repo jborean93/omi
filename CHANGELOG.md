@@ -3,6 +3,21 @@
 This is the changelog for this fork of OMI.
 It documents the changes in each of the tagged releases
 
+## 2.2.0 - TBD
+
++ Created universal builds to be used across the various nix distributions
+  + `glibc` is based on CentOS 7 and is designed for most GNU/Linux distributions, EL/Debian/Arch/etc
+  + `musl` is based on Alpine 3 and is designed for busybox/Linux distributions, Alpine
+  + `macOS` is based on macOS
+  + These universal builds is designed to reduce the number of `libmi` builds being distributed and automatically support future distribution releases as they are made
++ Deprecated the `-Distribution` parameter of `Install-WSMan` as it no longer does anything
++ Removed support for Debian 8 and Fedora 31 due to the age of the distribution
++ Added initial support for OpenSSL 3.x for glibc, musl, and macOS based distributions
++ Added support for using OpenSSL installed from `port` if `brew` is not used on macOS
+  + One of them must be installed but you are no longer limited to just `brew`
++ Use `@loader_path` on macOS instead of `@executable_path` for loading `libmi` to support relative paths from the library itself rather than `pwsh`
++ `Register-TrustedCertificate` will now create a file with a determinable name to avoid creating duplicate entries
+
 ## 2.1.0 - 2020-11-24
 
 + Added the following distributions

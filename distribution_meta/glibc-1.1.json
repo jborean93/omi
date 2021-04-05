@@ -1,22 +1,22 @@
 {
-    "container_image": "fedora:33",
-    "package_manager": "dnf",
+    "container_image": "centos:7",
+    "package_manager": "yum",
     "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
+    "openssl_version": "1.1.1k",
     "build_deps": [
         "cmake",
         "gcc",
         "git",
         "krb5-devel",
         "make",
-        "openssl",
-        "openssl-devel",
-        "which"
+        "wget",
+        "which",
+        "zlib-devel"
     ],
     "test_deps": [
         "gssntlmssp",
         "krb5-devel",
         "krb5-workstation",
-        "openssl",
         "powershell",
         "which"
     ],

@@ -4,24 +4,19 @@
     "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
     "build_deps": [
         "cmake",
-        "bind-utils",
         "gcc",
-        "gcc-c++",
         "git",
         "krb5-devel",
         "make",
         "openssl",
         "openssl-devel",
-        "pam-devel",
-        "redhat-lsb-core",
-        "rpm-build",
-        "rpm-devel",
         "which"
     ],
     "test_deps": [
         "gssntlmssp",
         "krb5-devel",
         "krb5-workstation",
+        "openssl",
         "powershell",
         "which"
     ],

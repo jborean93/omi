@@ -28,7 +28,10 @@
                 (item.path | basename | splitext)[0]
             ]
         }}
-    when: (item.path | basename | splitext)[0] != 'macOS'
+    when:
+    - not (item.path | basename | splitext)[0].startswith('macOS')
+    - not (item.path | basename | splitext)[0].startswith('glibc')
+    - not (item.path | basename | splitext)[0].startswith('musl')
     loop: '{{ distribution_raw.files }}'
 
   - name: get a list of the final distributions to run

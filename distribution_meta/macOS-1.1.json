@@ -1,0 +1,16 @@
+{
+    "container_image": "",
+    "package_manager": "brew",
+    "microsoft_repo": "",
+    "openssl_version": "1.1.1k",
+    "build_deps": [
+        "cmake",
+        "pkg-config"
+    ],
+    "test_deps": [
+        "openssl",
+        "cask:powershell"
+    ],
+    "cert_staging_dir": "/usr/local/etc/openssl@1.1/certs",
+    "cert_staging_cmd": "/usr/local/opt/openssl@1.1/bin/c_rehash"
+}

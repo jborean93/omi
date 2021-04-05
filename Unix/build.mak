@@ -62,9 +62,9 @@ DIRECTORIES += pal
 #DIRECTORIES += nits
 
 #DIRECTORIES += ut
-ifeq ($(COMPILER),GNU)
-DIRECTORIES += strhash
-endif
+#ifeq ($(COMPILER),GNU)
+#DIRECTORIES += strhash
+#endif
 #DIRECTORIES += mof
 DIRECTORIES += sock
 DIRECTORIES += base

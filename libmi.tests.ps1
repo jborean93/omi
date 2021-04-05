@@ -62,7 +62,7 @@ BeforeAll {
         }
 
         # Heimdal (used by macOS) requires this argument to successfully send the password to kinit
-        if ($Global:Distribution -eq 'macOS') {
+        if ($Global:Distribution.StartsWith('macOS')) {
             $kinitArgs.Add('--password-file=STDIN')
         }
 
@@ -118,19 +118,25 @@ BeforeAll {
 
 Describe "PSWSMan tests" {
     It "Calculates the right distribution" {
+        $expected = $Global:Distribution
+        if ($expected.StartsWith('macOS')) {
+            $expected = 'macOS'
+        }
+
         $actual = &(Get-Module PSWSMan) { Get-Distribution }
-        $actual | Should -Be $Global:Distribution
+        $actual | Should -Be $expected
     }
 
-    It "Doesn't error when installing libs again" {
+    # We need to run as root for macOS as it creates symlinks which just makes the tests harder to run so skip that.
+    It "Doesn't error when installing libs again" -Skip:($Global:Distribution.StartsWith('macOS')) {
         Install-WSMan -WarningVariable wv
         [bool]$wv | Should -Be $false
     }
 
-    It "Errors with invalid distribution" {
-        Install-WSMan -Distribution invalid -ErrorVariable ev -ErrorAction SilentlyContinue
-        $ev.Count | Should -Be 1
-        $ev[0].Exception.Message | Should -BeLike "Unsupported distribution 'invalid'. Supported distributions: *"
+    It "Dep warning with -Distribution" -Skip:($Global:Distribution.StartsWith('macOS')) {
+        Install-WSMan -Distribution invalid -WarningVariable wv -WarningAction SilentlyContinue
+        $wv.Count | Should -Be 1
+        $wv[0].Message | Should -Be "-Distribution is deprecated and will be removed in a future version"
     }
 
     # Alpine3 doesn't come with a copy of libmi or libpsrpclient so this test will fail when running there.
@@ -139,7 +145,7 @@ Describe "PSWSMan tests" {
         @{ Name = 'libpsrpclient' }
     ) {
         $pwshDir = Split-Path -Path ([PSObject].Assembly.Location) -Parent
-        $libExtension = if ($Global:Distribution -eq 'macOS') { 'dylib' } else { 'so' }
+        $libExtension = if ($Global:Distribution.StartsWith('macOS')) { 'dylib' } else { 'so' }
         $libName = "$($Name).$($libExtension).bak"
 
         Test-Path -LiteralPath (Join-Path -Path $pwshDir -ChildPath $libName) -PathType Leaf | Should -Be $true
@@ -191,9 +197,8 @@ Describe "PSRemoting through WSMan" {
     }
 
     # CentOS 7 does not have a new enough version of GSSAPI to work with NTLM auth.
-    # Debian 8 does not have the gss-ntlmssp package available.
     # macOS has troubles with NTLM over SPNEGO when it comes to message encryption.
-    It "Connects over HTTP with NTLM auth" -Skip:($Global:Distribution -in @('centos7', 'debian8', 'macOS')) {
+    It "Connects over HTTP with NTLM auth" -Skip:($Global:Distribution -in @('centos7') -or $Global:Distribution.StartsWith('macOS')) {
         $invokeParams = @{
             ComputerName = $Global:TestHostInfo.HostnameIP
             Credential = $Global:TestHostInfo.Credential
@@ -247,7 +252,7 @@ Describe "PSRemoting over HTTPS" {
     } | Select-Object -Property Name, Port
 
     # Older OpenSSL versions don't seem to report a verification error but a more generic one
-    if ($Global:Distribution -in @('debian8', 'ubuntu16.04', 'centos7')) {
+    if ($Global:Distribution -in @('ubuntu16.04', 'centos7')) {
         $Global:ExpectedVerificationError = '*error:14090086:SSL routines:func(144):reason(134)*'
     } else {
         $Global:ExpectedVerificationError = '*certificate verify failed*'
@@ -279,15 +284,21 @@ Describe "PSRemoting over HTTPS" {
         [PSWSMan.Native]::unsetenv('SSL_CERT_FILE')
     }
 
-    # ChannelBindingToken doesn't work on SPNEGO with MIT krb5 until after 1.19. Fedora seems to have backported
+    # ChannelBindingToken doesn't work on SPNEGO with MIT krb5 until after 1.19. Fedora/CentOS 8 seems to have backported
     # further changes into the package which reports the older versions in reality has the fix so we also check that.
     # macOS uses Heimdal which isn't affected by that bug.
-    It "Connects over HTTPS - Negotiate" -Skip:($Global:Distribution -notin @('fedora32', 'fedora33', 'macOS') -and $Global:KrbVersion -lt [Version]'1.19') {
+    It "Connects over HTTPS - Negotiate" -Skip:(
+        (-not $Global:Distribution.StartsWith('fedora') -and -not $Global:Distribution.StartsWith('macOS') -and $Global:Distribution -ne 'centos8') -and
+        $Global:KrbVersion -lt [Version]'1.19'
+    ) {
         $actual = Invoke-Command @CommonInvokeParams -Port $GoodCertPort
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
-    It "Connects over HTTPS with NTLM auth" -Skip:($Global:Distribution -notin @('fedora32') -and $Global:KrbVersion -lt [Version]'1.19') {
+    It "Connects over HTTPS with NTLM auth" -Skip:(
+        (-not $Global:Distribution.StartsWith('fedora') -and $Global:Distribution -ne 'centos8') -and
+        $Global:KrbVersion -lt [Version]'1.19'
+    ) {
         # Using an IP address means we break Kerberos auth and fallback to NTLM
         $invokeParams = $CommonInvokeParams.Clone()
         $invokeParams.ComputerName = $Global:TestHostInfo.HostnameIP
@@ -322,9 +333,7 @@ Describe "PSRemoting over HTTPS" {
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
-    # Debian 8 ships with a really old version of OpenSSL that does not offer CN verification.
-    $skipCN = 'debian8' -eq $Global:Distribution
-    It "Fails to verify the CN - <Scenario>" -Skip:$skipCN -TestCases @(
+    It "Fails to verify the CN - <Scenario>" -TestCases @(
         @{
             Scenario = 'Default'
             Process = {}
@@ -340,7 +349,7 @@ Describe "PSRemoting over HTTPS" {
         { Invoke-Command @CommonInvokeParams -Port $BadCNPort -Authentication Kerberos } | Should -Throw $Expected
     }
 
-    It "Ignores a CN failure with env value" -Skip:$skipCN {
+    It "Ignores a CN failure with env value" {
         Disable-WSManCertVerification -CNCheck
         $actual = Invoke-Command @CommonInvokeParams -Port $BadCNPort -Authentication Kerberos
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
@@ -366,7 +375,7 @@ Describe "PSRemoting over HTTPS" {
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
-    It "Failed to verify the CA and CN - <Scenario>" -Skip:$skipCN -TestCases @(
+    It "Failed to verify the CA and CN - <Scenario>" -TestCases @(
         @{
             Scenario = 'No skips'
             Process = {}
@@ -396,7 +405,7 @@ Describe "PSRemoting over HTTPS" {
 
 Describe "Kerberos delegation" {
     # macOS comes with Heimdal which by default gets a forwardable ticket
-    It "Connects with defaults - no delegation" -Skip:$($Global:Distribution -eq 'macOS') {
+    It "Connects with defaults - no delegation" -Skip:$($Global:Distribution.StartsWith('macOS')) {
         $invokeParams = @{
             ComputerName = $Global:TestHostInfo.Hostname
             Credential = $Global:TestHostInfo.Credential
@@ -409,8 +418,8 @@ Describe "Kerberos delegation" {
         $actual | Should -Not -BeLike "*forwarded*"
     }
 
-    # Debian 8 and Ubuntu 16.04 don't seem to read the env var config, just skip for now
-    It "Connects with custom krb5.conf with forwardable - <Authentication>" -Skip:$($Global:Distribution -in @('debian8', 'ubuntu16.04')) -TestCases @(
+    # Ubuntu 16.04 don't seem to read the env var config, just skip for now
+    It "Connects with custom krb5.conf with forwardable - <Authentication>" -Skip:$($Global:Distribution -in @('ubuntu16.04')) -TestCases @(
         @{ Authentication = 'Negotiate' },
         @{ Authentication = 'Kerberos' }
     ) {

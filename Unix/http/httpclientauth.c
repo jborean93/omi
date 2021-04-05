@@ -903,8 +903,9 @@ static _Success_(return == 0) int _GssClientInitLibrary( _In_ void* data, _Outpt
         _g_gssClientState.krb5FreeCredContents = (krb5FreeCredContentsFn) fn_handle;
 #endif
 
-       return _ValidateClientCredentials(context) == 0;
-       //return TRUE;
+       // JBOREAN CHANGE: This just seems wrong and is just more things that can fail.
+       //return _ValidateClientCredentials(context) == 0;
+       return TRUE;
    }
 
    failed:

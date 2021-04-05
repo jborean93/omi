@@ -29,24 +29,38 @@ There are some other arguments you can supply to alter the behaviour of the buil
 
 Once the build step is completed it will generate the compiled libraries at `PSWSMan/lib/{distribution}/*`.
 
-The aim is to support the same distributions that PowerShell supports but that is a work in progress.
-The distributions that are currently setup in the `build.py` script are:
+The aim is to support the same distributions that PowerShell supports through universal builds that work across a wide range of distributions.
+There are currently the following universal builds that are distributed with `PSWSMan`:
+
++ [glibc-1.0.json](../distribution_meta/glibc-1.0.json)
++ [glibc-1.1.json](../distribution_meta/glibc-1.1.json)
++ [glibc-3.json](../distribution_meta/glibc-3.json)
++ [musl-1.1.json](../distribution_meta/musl-1.1.json)
++ [musl-3.json](../distribution_meta/musl-3.json)
++ [macOS-1.1.json](../distribution_meta/macOS-1.1.json)
++ [macOS-3.json](../distribution_meta/macOS-3.json)
+
+The `glibc` builds are designed for Linux distributions that run on GNU/Linux; CentOS, Ubuntu, Debian, Fedora, RHEL, OpenSUSE, etc.
+The `musl` builds are designed for Linux distributions based on Busybox like Alpine.
+The `macOS` build cannot be run on Docker but are designed for macOS.
+Each build contains a number that relates to the OpenSSL version it is compiled against.
+This is important as OpenSSL is not API/ABI compatible across these versions so we need to produce a separate library for each.
+
+There are also the following distribution specific setups that is used for testing these universal builds such as:
 
 + [alpine3.json](../distribution_meta/alpine3.json)
 + [archlinux.json](../distribution_meta/archlinux.json)
 + [centos7.json](../distribution_meta/centos7.json)
 + [centos8.json](../distribution_meta/centos8.json)
-+ [debian8.json](../distribution_meta/debian8.json)
 + [debian9.json](../distribution_meta/debian9.json)
 + [debian10.json](../distribution_meta/debian10.json)
-+ [fedora31.json](../distribution_meta/fedora31.json)
 + [fedora32.json](../distribution_meta/fedora32.json)
-+ [macOS.json](../distribution_meta/macOS.json) - Cannot be built on a Docker container, must be built on an actual macOS host
++ [fedora33.json](../distribution_meta/fedora33.json)
 + [ubuntu16.04.json](../distribution_meta/ubuntu16.04.json)
 + [ubuntu18.04.json](../distribution_meta/ubuntu18.04.json)
 + [ubuntu20.04.json](../distribution_meta/ubuntu20.04.json)
 
-The json file contains all the information required for `build.py` to install the depedencies and build the libraries.
+These can also be used to build `libmi` specifically for that distribution if need be.
 
 ## Manually building
 

@@ -23,38 +23,140 @@ class X509CertificateChainAttribute : ArgumentTransformationAttribute {
     }
 }
 
-Add-Type -Namespace PSWSMan -Name Native -MemberDefinition @'
-[StructLayout(LayoutKind.Sequential)]
-public class PWSH_Version
-{
-    public Int32 Major;
-    public Int32 Minor;
-    public Int32 Build;
-    public Int32 Revision;
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Runtime.InteropServices;
 
-    public static explicit operator Version(PWSH_Version v)
+namespace PSWSMan
+{
+    public class Native
     {
-        return new Version(v.Major, v.Minor, v.Build, v.Revision);
+        [StructLayout(LayoutKind.Sequential)]
+        public class PWSH_Version
+        {
+            public Int32 Major;
+            public Int32 Minor;
+            public Int32 Build;
+            public Int32 Revision;
+        
+            public static explicit operator Version(PWSH_Version v)
+            {
+                return new Version(v.Major, v.Minor, v.Build, v.Revision);
+            }
+        }
+
+        [DllImport("libc")]
+        public static extern void setenv(string name, string value);
+
+        [DllImport("libc")]
+        public static extern void unsetenv(string name);
+
+        [DllImport("libc")]
+        public static extern IntPtr gnu_get_libc_version();
+
+        [DllImport("libmi")]
+        public static extern void MI_Version_Info(PWSH_Version version);
+
+        [DllImport("libpsrpclient")]
+        public static extern void PSRP_Version_Info(PWSH_Version version);
+
+        private delegate uint OpenSSL_version_num_ptr();
+
+        public static uint OpenSSL_version_num(string[] libSSLPaths)
+        {
+            IntPtr lib = LoadLibrary(libSSLPaths);
+            if (lib == IntPtr.Zero)
+                return 0;
+
+            try
+            {
+                // OpenSSL_version_num was introduced in 1.1.x, use SSLeay for older versions.
+                string[] functionNames = {"OpenSSL_version_num", "SSLeay"};
+
+                foreach (string name in functionNames)
+                {
+                    IntPtr functionAddr = IntPtr.Zero;
+                    try
+                    {
+                        functionAddr = NativeLibrary.GetExport(lib, name);
+                    }
+                    catch (EntryPointNotFoundException) {}
+
+                    if (functionAddr == IntPtr.Zero)
+                        continue;
+
+                    var function = (OpenSSL_version_num_ptr)Marshal.GetDelegateForFunctionPointer(
+                        functionAddr, typeof(OpenSSL_version_num_ptr));
+                    return function();                    
+                }
+
+                return 0;
+            }
+            finally {
+                NativeLibrary.Free(lib);
+            }
+        }
+
+        private delegate IntPtr OpenSSL_version_ptr(int t);
+
+        public static string OpenSSL_version(string[] libSSLPaths, int t)
+        {
+            IntPtr lib = LoadLibrary(libSSLPaths);
+            if (lib == IntPtr.Zero)
+                return null;
+
+            try
+            {
+                IntPtr functionAddr = IntPtr.Zero;
+
+                try
+                {
+                    functionAddr = NativeLibrary.GetExport(lib, "OpenSSL_version");
+                }
+                catch (EntryPointNotFoundException) {}
+
+                if (functionAddr == IntPtr.Zero)
+                    return null;
+
+                var function = (OpenSSL_version_ptr)Marshal.GetDelegateForFunctionPointer(
+                    functionAddr, typeof(OpenSSL_version_ptr));
+
+                return Marshal.PtrToStringAuto(function(t));
+            }
+            finally {
+                NativeLibrary.Free(lib);
+            }
+        }
+
+        private static IntPtr LoadLibrary(string[] loadPaths)
+        {
+            foreach(string path in loadPaths)
+            {
+                IntPtr handle = IntPtr.Zero;
+                try
+                {
+                    if (NativeLibrary.TryLoad(path, out handle))
+                        return handle;
+                }
+                catch
+                {
+                    // TryLoad can actually through an exception so we just ignore it and continue on.
+                    continue;
+                }
+            }
+
+            return IntPtr.Zero;
+        }
     }
 }
-
-[DllImport("libc")]
-public static extern void setenv(string name, string value);
-
-[DllImport("libc")]
-public static extern void unsetenv(string name);
-
-[DllImport("libmi")]
-public static extern void MI_Version_Info(PWSH_Version version);
-
-[DllImport("libpsrpclient")]
-public static extern void PSRP_Version_Info(PWSH_Version version);
 '@
 
 Function exec {
     <#
     .SYNOPSIS
-    Wraps a native exec call in a function so it can be set with '-ErrorAction SilentlyContinue'.
+    Wraps a native exec call and output as separate streams for manual handling
     #>
     [CmdletBinding()]
     param (
@@ -67,10 +169,40 @@ Function exec {
         $Arguments
     )
 
-    (&$FilePath @Arguments | Set-Variable output) 2>&1 | Set-Variable err
-    $output
-    if ($err) {
-        $err | Write-Error
+    $psi = [Diagnostics.ProcessStartInfo]@{
+        FileName = $FilePath
+        Arguments = ($Arguments -join ' ')
+        RedirectStandardError = $true
+        RedirectStandardOutput = $true
+    }
+    $proc = [Diagnostics.Process]::Start($psi)
+
+    $stdout = [Text.StringBuilder]::new()
+    $stderr = [Text.StringBuilder]::new()
+    $eventParams = @{
+        InputObject = $proc
+        Action = {
+            if (-not [System.String]::IsNullOrEmpty($EventArgs.Data)) {
+                $Event.MessageData.AppendLine($EventArgs.Data)
+            }
+        }
+    }
+    $stdoutEvent = Register-ObjectEvent @eventParams -EventName 'OutputDataReceived' -MessageData $stdout
+    $stderrEvent = Register-ObjectEvent @eventParams -EventName 'ErrorDataReceived' -MessageData $stderr
+
+    $proc.BeginOutputReadLine()
+    $proc.BeginErrorReadLine()
+
+    $proc.WaitForExit()
+
+    Unregister-Event -SourceIdentifier $stdoutEvent.Name
+    Unregister-Event -SourceIdentifier $stderrEvent.Name
+
+
+    [PSCustomObject]@{
+        Stdout = $stdout.ToString()
+        Stderr = $stderr.ToString()
+        ExitCode = $proc.ExitCode
     }
 }
 
@@ -113,6 +245,255 @@ Function unsetenv {
     [PSWSMan.Native]::unsetenv($Name)
     if (Test-Path -LiteralPath env:$Name) {
         Remove-Item -LiteralPath env:$Name -Force
+    }
+}
+
+Function Get-OpenSSLInfo {
+    <#
+    .SYNOPSIS
+    Gets the OpenSSL version and SSL dir that is currently installed.
+    #>
+    [CmdletBinding()]
+    param (
+        [String[]]
+        $LibSSL
+    )
+
+    $distribution = Get-Distribution
+
+    $sslPaths = if ($LibSSL) {
+        $LibSSL
+    }
+    elseif ($distribution -eq 'macOS') {
+        @(
+            'libssl',
+            'libssl.dylib',
+            'libssl.1.1.dylib',
+            'libssl.10.dylib',
+            'libssl.1.0.0.dylib',
+            'libssl.3.dylib'
+        )
+    }
+    else {
+        @(
+            'libssl',
+            'libssl.so',
+            'libssl.so.1.1',
+            'libssl.so.10',
+            'libssl.so.1.0.0',
+            'libssl.so.3'
+        )
+    }
+    Write-Verbose -Message "Getting OpenSSL version for '$($sslPaths -join "', '")'"
+
+    $versionNum = [PSWSMan.Native]::OpenSSL_version_num($sslPaths)
+
+    # MNNFFPPS: major minor fix patch status
+    # For major=1 patch refers to the letter as a number, e.g. 1 == 'a', 2 == 'b', etc
+    # We don't care about status
+    $major = ($versionNum -band 0xF0000000) -shr 28
+    $minor = ($versionNum -band 0x0FF00000) -shr 20
+    $fix = ($versionNum -band 0x000FF000) -shr 12
+    $patch = ($versionNum -band 0x00000FF0) -shr 4
+
+    $version = [Version]::new($major, $minor, $fix, $patch)
+
+    $sslDir = [PSWSMan.Native]::OpenSSL_version($sslPaths, 4)  # OPENSSL_DIR
+    $sslDir = if ($sslDir) {
+        $sslDir |
+            Select-String -Pattern 'OPENSSLDIR:\s+[\"|''](.*)[\"|'']$' |
+            ForEach-Object -Process { $_.Matches[0].Groups[1].Value } |
+            Select-Object -First 1
+    }
+
+    [PSCustomObject]@{
+        Version = $version
+        SSLDir = $sslDir
+    }
+}
+
+Function Get-MacOSOpenSSL {
+    <#
+    .SYNOPSIS
+    Gets the libcrypto and libssl paths to use on macOS. It gets the path from the brew install openssl package and
+    falls back to the port install package. We cannot use the LibreSSL version distributed by Apple as that is old
+    and isn't compatible with libmi.
+    #>
+    [CmdletBinding()]
+    param ()
+
+    $libCrypto = $null
+    $libSSL = $null
+
+    if (Get-Command -Name brew -CommandType Application -ErrorAction SilentlyContinue) {
+        $brewInfo = exec brew --prefix openssl
+        $msg = "Attempting to get OpenSSL info with brew --prefix openssl`nSTDOUT: {0}`nSTDERR: {1}`nRC: {2}" -f (
+            $brewInfo.Stdout, $brewInfo.Stderr, $brewInfo.ExitCode)
+        Write-Verbose -Message $msg
+
+        if ($brewInfo.ExitCode -eq 0) {
+            $brewLibCrypto = Join-Path -Path $brewInfo.Stdout.Trim() lib libcrypto.dylib
+            if (Test-Path -LiteralPath $brewLibCrypto) {
+                Write-Verbose "Brew libcrypto exists at '$brewLibCrypto'"
+                $libCrypto = $brewLibCrypto
+            }
+
+            $brewLibSSL = Join-Path -Path $brewInfo.Stdout.Trim() lib libssl.dylib
+            if (Test-Path -LiteralPath $brewLibSSL) {
+                Write-Verbose "Brew libssl exists at '$brewLibCrypto'"
+                $libSSL = $brewLibSSL`
+            }
+        }
+    }
+
+    if (
+        -not ($libCrypto -and $libSSL) -and
+        (Get-Command -Name port -CommandType Application -ErrorAction SilentlyContinue)
+    ) {
+        $portInfo = exec port contents openssl
+        Write-Verbose -Message "Attempting to get OpenSSL info port contents openssl"
+
+        $portLibSSL = $null
+        $portLibCrypto = $null
+        
+        $portInfo.Stdout -split '\r?\n' | ForEach-Object -Process {
+            $line = $_.Trim()
+            if (-not $line.StartsWith('/') -or ($portLibSSL -and $portLibCrypto)) {
+                return
+            }
+
+            if ($line -like '*/libssl.dylib') {
+                $portLibSSL = $line
+            }
+            elseif ($line -like '*/libcrypto.dylib') {
+                $portLibCrypto = $line
+            }
+        }
+
+        if ($portLibCrypto -and (Test-Path -LiteralPath $portLibCrypto)) {
+            Write-Verbose "Port libcrypto exists at '$portLibCrypto'"
+            $libCrypto = $portLibCrypto
+        }
+        
+        if ($portLibSSL -and (Test-Path -LiteralPath $portLibSSL)) {
+            Write-Verbose "Port libssl exists at '$portLibSSL'"
+            $libSSL = $portLibSSL
+        }
+    }
+
+    [PSCustomObject]@{
+        LibCrypto = $libCrypto
+        LibSSL = $libSSL
+    }
+}
+
+Function Get-HostInfo {
+    <#
+    .SYNOPSIS
+    Gets the host info that selects the native libraries to install.
+
+    .NOTES
+    Currently we support the following C Standard Libraries:
+        macOS
+        glibc
+        musl
+
+    Each support OpenSSL 1.1.x and 3.x and glibc also supports 1.0.x.
+    #>
+    [CmdletBinding()]
+    param ()
+
+    $distribution = Get-Distribution
+
+    switch ($distribution) {
+        macOS {
+            $libDetails = Get-MacOSOpenSSL
+
+            if ($libDetails.LibCrypto -and $libDetails.LibSSL) {
+                $opensslVersion = (Get-OpenSSLInfo -LibSSL $libDetails.LibSSL).Version
+                Write-Verbose -Message ("OpenSSL Version: Major {0} Minor {1} Patch {2}" -f (
+                    $opensslVersion.Major, $opensslVersion.Minor, $opensslVersion.Build))
+
+                $openssl, $cryptoSource, $sslSource = switch ($opensslVersion) {
+                    { $_.Major -eq 1 -and $_.Minor -eq 1 } { '1.1', 'libcrypto.1.1.dylib', 'libssl.1.1.dylib' }
+                    { $_.Major -eq 3 } { '3', 'libcrypto.3.dylib', 'libssl.3.dylib' }
+                    # Just default to 1.1 in case something catastrophic went wrong
+                    default { '1.1', 'libcrypto.1.1.dylib', 'libssl.1.1.dylib' }
+                }
+
+                [PSCustomObject]@{
+                    Distribution = $distribution
+                    StandardLib = 'macOS'
+                    OpenSSL = $openssl
+                    LibCrypto = @{
+                        Source = $cryptoSource
+                        Target = $libDetails.LibCrypto
+                    }
+                    LibSSL = @{
+                        Source = $sslSource
+                        Target = $libDetails.LibSSL
+                    }
+                }
+            }
+        }
+        default {
+            $opensslVersion = (Get-OpenSSLInfo).Version
+            Write-Verbose -Message ("OpenSSL Version: Major {0} Minor {1} Patch {2}" -f (
+                $opensslVersion.Major, $opensslVersion.Minor, $opensslVersion.Build))
+
+            $openssl = switch ($opensslVersion) {
+                { $_.Major -eq 1 -and $_.Minor -eq 0 } { '1.0' }
+                { $_.Major -eq 1 -and $_.Minor -eq 1 } { '1.1' }
+                { $_.Major -eq 3 } { '3' }
+            }
+
+            $cStd = $null
+            try {
+                [void][PSWSMan.Native]::gnu_get_libc_version()
+                $cStd = 'glibc'
+            }
+            catch [EntryPointNotFoundException] {
+                # gnu_get_libc_version() is GLIBC, we fallback on a check to musl through ldd --version.
+                $libcInfo = exec ldd --version
+                $libcVerbose = "Not glibc, checking musl with ldd --version:`nSTDOUT: {0}`nSTDERR: {1}`nRC: {2}" -f (
+                    $libcInfo.Stdout, $libcInfo.Stderr, $libcInfo.ExitCode)
+                Write-Verbose -Message $libcVerbose
+
+                # ldd --version can output on either STDOUT/STDERR so we check both
+                if (($libcInfo.Stdout + $libcInfo.Stderr).Contains('musl', 'CurrentCultureIgnoreCase')) {
+                    $cStd = 'musl'
+                }
+            }
+
+            # We don't need to modify the symlinks as the linked SSL libs should already match what's in the PATH.
+            # Only exception is CentOS 7 which has libcrypto.so.10 and libssl.so.10.
+            # | OpenSSL Version |     crypto name    |     ssl name    |
+            # | 1.0.x           | libcrypto.so.1.0.0 | libssl.so.1.0.0 |
+            # | 1.1.x           | libcrypto.so.1.1   | libssl.so.1.1   |
+            # | 3.x             | libcrypto.so.3     | libssl.so.3     |
+            if ($distribution -eq 'centos7') {
+                $libCrypto = @{
+                    Source = 'libcrypto.so.1.0.0'
+                    Target = '/lib64/libcrypto.so.10'
+                }
+                $libSSL = @{
+                    Source = 'libssl.so.1.0.0'
+                    Target = '/lib64/libssl.so.10'
+                }
+            }
+            else {
+                $libCrypto = $null
+                $libSSL = $null
+            }
+
+            [PSCustomObject]@{
+                Distribution = $distribution
+                StandardLib = $cStd
+                OpenSSL = $openssl
+                LibCrypto = $libCrypto
+                LibSSL = $libSSL
+            }
+        }
     }
 }
 
@@ -168,25 +549,6 @@ Function Get-Distribution {
     }
 
     $distribution
-}
-
-Function Get-ValidDistributions {
-    <#
-    .SYNOPSIS
-    Outputs a list of valid distributions available to PSWSMan
-    #>
-    [CmdletBinding()]
-    param ()
-
-    
-    Get-ChildItem -LiteralPath $Script:LibPath -Directory | ForEach-Object -Process {
-        $libExtension = if ($_.Name -eq 'macOS') { 'dylib' } else { 'so' }
-
-        $libraries = Get-ChildItem -LiteralPath $_.FullName -File -Filter "*.$libExtension"
-        if ($libraries) {
-            $_.name
-        }
-    }
 }
 
 Function Disable-WSManCertVerification {
@@ -255,7 +617,7 @@ Function Enable-WSManCertVerification {
 
     .DESCRIPTION
     Enables certificate verification for any WSMan requests globally. This can be enabled for just the CA or CN checks
-    or for all checks. The absence of a switch does not disable those checks, it only enables the specific check
+    or for all checks. The absence of a switch does not disable those checksomi, it only enables the specific check
     requested  if it was not enabled already.
 
     .PARAMETER CACheck
@@ -370,7 +732,7 @@ Function Install-WSMan {
     Install the patched WSMan libs for the current distribution.
 
     .PARAMETER Distribution
-    Specify the distribution to install the libraries for. If not set then the current distribution will calculated.
+    Deprecated and no longer used.
 
     .EXAMPLE
     # Need to run as root
@@ -386,27 +748,24 @@ Function Install-WSMan {
         $Distribution
     )
 
-    if (-not $Distribution) {
-        $Distribution = Get-Distribution
-
-        if (-not $Distribution) {
-            Write-Error -Message "Failed to find distribution for current host" -Category InvalidOperation
-            return
-        }
+    if ($Distribution) {
+        Write-Warning -Message "-Distribution is deprecated and will be removed in a future version"
     }
-    Write-Verbose -Message "Installing WSMan libs for '$Distribution'"
 
-    $validDistributions = Get-ValidDistributions
-    if ($Distribution -notin $validDistributions) {
-        $distroList = "'$($validDistributions -join "', '")'"
-        $msg = "Unsupported distribution '$Distribution'. Supported distributions: $distroList"
-        Write-Error -Message $msg -Category InvalidArgument 
+    $hostInfo = Get-HostInfo
+
+    if (-not $hostInfo.StandardLib -or -not $hostInfo.OpenSSL) {
+        $msg = "Failed to select the necessary library, the host isn't macOS, Linux based on GLIBC or musl, or OpenSSL isn't installed"
+        Write-Error -Message $msg -Category InvalidOperation
         return
     }
 
+    $library = '{0}-{1}' -f ($hostInfo.StandardLib, $hostInfo.OpenSSL)
+    Write-Verbose -Message "Installing WSMan libs for '$library'"
+
     $pwshDir = Split-Path -Path ([PSObject].Assembly.Location) -Parent
-    $distributionLib = Join-Path $Script:LibPath -ChildPath $Distribution
-    $libExtension = if ($distribution -eq 'macOS') { 'dylib' } else { 'so' }
+    $distributionLib = Join-Path $Script:LibPath -ChildPath $library
+    $libExtension = if ($hostInfo.StandardLib -eq 'macOS') { 'dylib' } else { 'so' }
 
     $notify = $false
     Get-ChildItem -LiteralPath $distributionLib -File -Filter "*.$libExtension" | ForEach-Object -Process {
@@ -434,12 +793,42 @@ Function Install-WSMan {
         }
     }
 
+    # These symlinks are either no longer needed or we set them to our own path.
+    Get-Item -Path (Join-Path -Path $pwshDir -ChildPath 'lib*.so*') |
+        Where-Object { $_.Name -match 'lib(ssl|crypto)\.so.*' } |
+        ForEach-Object -Process {
+            Write-Verbose -Message "Removing existing symlink '$($_.FullName)'"
+            $_ | Remove-Item -Force
+        }
+
+    $hostInfo.LibCrypto, $hostInfo.LibSSL | ForEach-Object -Process {
+        if (-not $_) {
+            return
+        }
+
+        $srcPath = Join-Path -Path $pwshDir -ChildPath $_.Source
+        $create = $true
+        $srcLink = Get-Item -LiteralPath $srcPath -ErrorAction SilentlyContinue
+        if ($srcLink) {
+            if ($srcLink.Target -ne $_.Target) {
+                $srcLink | Remove-Item -Force
+            }
+            else {
+                $create = $false
+            }
+        }
+
+        if ($create) {
+            Write-Verbose -Message "Creating symbolic link '$srcPath' -> '$($_.Target)'"
+            New-Item -Path $srcPath -ItemType SymbolicLink -Value $_.Target | Out-Null
+        }
+    }
+
     if ($notify) {
         $msg = 'WSMan libs have been installed, please restart your PowerShell session to enable it in PowerShell'
         Write-Warning -Message $msg
     }
 }
-Register-ArgumentCompleter -CommandName Install-WSMan -ParameterName Distribution -ScriptBlock { Get-ValidDistributions }
 
 Function Register-TrustedCertificate {
     <#
@@ -450,8 +839,8 @@ Function Register-TrustedCertificate {
     Registers a certificate, or a chain or certificates, into the trusted store for the current Linux distribution.
 
     .PARAMETER Name
-    The name of the certificate file to use when placing it into the trusted store directory. If not set then a random
-    filename with the prefix 'PSWSMan-' will be used.
+    The name of the certificate file to use when placing it into the trusted store directory. If not set then the
+    value 'PSWSMan-(sha256 hash of certs)' will be used.
 
     .PARAMETER Path
     Specifies the path of a certificate to register. Wildcard characters are permitted.
@@ -528,37 +917,23 @@ Function Register-TrustedCertificate {
                 '/etc/ca-certificates/trust-source/anchors', 'update-ca-trust extract'
             }
             macOS {
-                # macOS is special, we don't use the builtin LibreSSL setup and rely on brew to provide OpenSSL. This
-                # means the path to the cert dir could change at any point in the future and we can't rely on default
-                # system locations. Instead we use otool to figure out the linked location of openssl and use that. If
-                # that fails then fallback to what should be the default '/user/local/etc/openssl@1.1/certs'.
-                $libmiPath = Join-Path -Path $Script:Libpath -ChildPath 'macOS' -AdditionalChildPath 'libmi.dylib'
+                # macOS is special, we don't use the builtin LibreSSL setup and rely on brew or port to provide
+                # OpenSSL. This means the path to the cert dir could change at any point in the future and we can't
+                # rely on default system locations. Instead we determine the path to the libssl.dylib library and use
+                # that to PInvoke the OPENSSLDIR value that it has registered. If that fails then fallback to what
+                # should be the brew default '/user/local/etc/openssl@1.1/certs'.
+                $libSSL = (Get-MacOSOpenSSL).LibSSL
 
-                $opensslPath = $null
-                if (Test-Path -LiteralPath $libmiPath) {
-                    $opensslPath = exec otool -L $libmiPath -ErrorAction SilentlyContinue |
-                        Select-String -Pattern '\s+(\/.*libssl\..*\.dylib)\s+\(.*\)' |
-                        ForEach-Object -Process { Split-Path -Path (Split-Path -Path $_.Matches[0].Groups[1]) } |
-                        Select-Object -First 1
-                }
-                elseif (Get-Command -Name brew -CommandType Application -ErrorAction SilentlyContinue) {
-                    $opensslPath = exec brew --prefix openssl -ErrorAction SilentlyContinue
-                }
+                $opensslPath = Split-Path -Path (Split-Path $libSSL -Parent) -Parent
+                $opensslBin = Join-Path -Path $opensslPath -ChildPath bin
+                $cRehash = Join-Path -Path $opensslBin -ChildPath c_rehash
 
-                if ($opensslPath) {
-                    $openssl = Join-Path $opensslPath -ChildPath bin -AdditionalChildPath openssl
-                    $certDirectory = exec $openssl @('version', '-d') -ErrorAction SilentlyContinue |
-                        Select-String -Pattern 'OPENSSLDIR:\s+[\"|''](.*)[\"|'']$' |
-                        ForEach-Object -Process { $_.Matches[0].Groups[1].Value } |
-                        Select-Object -First 1
-                }
-
+                $certDirectory = (Get-OpenSSLInfo -LibSSL $libSSL).SSLDir
                 if (-not $certDirectory) {
-                    $certDirectory = '/usr/local/etc/openssl@1.1/certs'
+                    $certDirectory = '/usr/local/etc/openssl@1.1'
                 }
-                $cRehash = Join-Path -Path $opensslPath -ChildPath bin -AdditionalChildPath c_rehash
 
-                $certDirectory, $cRehash
+                (Join-Path -Path $certDirectory -ChildPath certs), $cRehash
             }
             { $_ -like 'centos*' -or $_ -like 'fedora*' } {
                 '/etc/pki/ca-trust/source/anchors', 'update-ca-trust extract'
@@ -571,8 +946,10 @@ Function Register-TrustedCertificate {
         }
         Write-Verbose "Trust directory '$certPath' - Refresh command '$refreshCommand'"
 
-        if (-not (Test-Path -LiteralPath $certPath)) {
-            $msg = "Failed to find the expected cert trust path at '$certPath' for distribution '$distribution'"
+        # We create the child dir if it doesn't exist but we want the parent to at least exist
+        $parentDir = Split-Path $certPath -Parent
+        if (-not (Test-Path -LiteralPath $parentDir)) {
+            $msg = "Failed to find the expected cert trust parent dir at '$parentDir' for distribution '$distribution'"
             Write-Error -Message $msg -Category ObjectNotFound
             $failed = $true
             return
@@ -664,13 +1041,24 @@ Function Register-TrustedCertificate {
             }
 
             if (-not $Name) {
-                $Name = "PSWSMan-$([IO.Path]::GetRandomFileName())"
+                $hashStr = (Get-FileHash -LiteralPath $tempFile -Algorithm SHA256).Hash
+                $Name = "PSWSMan-$hashStr"
+            }
+
+            if (-not (Test-Path $certPath)) {
+                if ($PSCmdlet.ShouldProcess($certPath, 'Create')) {
+                    Write-Verbose -Message "Creating trust cert dir at '$certPath'"
+                    New-Item -Path $certPath -ItemType Directory | Out-Null
+                }
             }
 
             $destCertPath = Join-Path -Path $certPath -ChildPath "$Name.$certExtension"
             if ($PSCmdlet.ShouldProcess($destCertPath, 'Register')) {
                 Write-Verbose -Message "Creating trust cert file at '$destCertPath'"
                 Copy-Item -LiteralPath $tempFile -Destination $destCertPath -Force
+
+                # The file must be executable
+                exec chmod 755 $destCertPath | Out-Null
 
                 # The command to run may contain argument, just use Invoke-Expression as the input is statically defined.
                 Write-Verbose -Message "Refreshing the trusted certificate directory with '$refreshCommand'"

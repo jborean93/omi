@@ -1238,29 +1238,38 @@ if [ "$arg1" = "syslibs" ]; then
     r=""
 
     case "$platform" in
+        # JBOREAN CHANGE: Don't need pam for WSMan client
         LINUX_IX86_GNU|LINUX_X86_64_GNU|LINUX_PPC_GNU|LINUX_ARM_GNU)
-            r="-lpthread -ldl -lpam"
+            #r="-lpthread -ldl -lpam"
+            r="-lpthread -ldl"
             ;;
         MONTAVISTA_IX86_GNU)
-            r="-lpthread -ldl -lpam"
+            #r="-lpthread -ldl -lpam"
+            r="-lpthread -ldl"
             ;;
         NETBSD_IX86_GNU)
-            r="-lpthread -ldl -lpam"
+            #r="-lpthread -ldl -lpam"
+            r="-lpthread -ldl"
             ;;
         SUNOS_I86PC_SUNPRO|SUNOS_SPARC_SUNPRO)
-            r="-lpthread -lsocket -lnsl -ldl -lpam"
+            #r="-lpthread -lsocket -lnsl -ldl -lpam"
+            r="-lpthread -lsocket -lnsl -ldl"
             ;;
         AIX_PPC_IBM)
-            r="-lpthread -ldl -lpam"
+            #r="-lpthread -ldl -lpam"
+            r="-lpthread -ldl"
             ;;
         HPUX_IA64_HP)
-            r="-lpthread -ldl -lpam"
+            #r="-lpthread -ldl -lpam"
+            r="-lpthread -ldl"
             ;;
         HPUX_PARISC_HP)
-            r="-lpthread -lpam"
+            #r="-lpthread -lpam"
+            r="-lpthread"
             ;;
         DARWIN_IX86_GNU)
-            r="-lpthread -ldl -lpam"
+            #r="-lpthread -ldl -lpam"
+            r="-lpthread -ldl"
             ;;
     esac
 

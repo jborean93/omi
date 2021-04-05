@@ -36,6 +36,9 @@ def main():
     if args.docker and not distro_details['container_image']:
         raise ValueError("Cannot run --docker on %s as no container_image has been specified" % distribution)
 
+    # On macOS we aren't running as root in a container so this step needs sudo.
+    sudo_prefix = 'sudo ' if distribution.startswith('macOS') else ''
+
     script_steps = []
     if not args.skip_deps:
         repo_script = build_package_repo_command(distro_details['package_manager'], distro_details['microsoft_repo'])
@@ -43,18 +46,12 @@ def main():
 
         script_steps.append(('Setting up the Microsoft package manager repo', repo_script))
 
-        if distribution == 'debian8':
-            debian_ms = 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-debian-jessie-prod jessie main" > /etc/apt/sources.list.d/microsoft.list'
-            script_steps.append(('Further steps for MS repo on Debian 8', debian_ms))
-
-        elif distribution == 'debian9':
+        if distribution == 'debian9':
             debian_ms = 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-debian-stretch-prod stretch main" > /etc/apt/sources.list.d/microsoft.list'
             script_steps.append(('Further steps for MS repo on Debian 9', debian_ms))
 
         script_steps.append(('Installing test dependency packages', dep_script))
 
-        # On macOS we aren't running as root in a container so this step needs sudo.
-        sudo_prefix = 'sudo ' if distribution == 'macOS' else ''
         cert_path = os.path.join('integration_environment', 'cert_setup', 'ca.pem')
         if os.path.exists(os.path.join(OMI_REPO, cert_path)):
             cert_cmd = "%spwsh -Command 'Import-Module ./PSWSMan; Register-TrustedCertificate -Path %s -Verbose'" \
@@ -95,7 +92,7 @@ echo "%s" > /tmp/distro.txt''' % distribution
     script_steps.append(('Getting libmi version',
         "pwsh -Command 'Import-Module ./PSWSMan; Get-WSManVersion'"))
 
-    if distribution == 'macOS':
+    if distribution.startswith('macOS'):
         script_steps.append(('Output libpsrpclient libraries', 'otool -L "${PWSHDIR}/libpsrpclient.dylib"'))
         script_steps.append(('Output libmi libraries', 'otool -L "${PWSHDIR}/libmi.dylib"'))
 

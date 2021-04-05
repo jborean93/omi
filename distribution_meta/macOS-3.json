@@ -2,9 +2,9 @@
     "container_image": "",
     "package_manager": "brew",
     "microsoft_repo": "",
+    "openssl_version": "3.0.0-alpha13",
     "build_deps": [
         "cmake",
-        "openssl@1.1",
         "pkg-config"
     ],
     "test_deps": [

@@ -20,11 +20,12 @@
 # include <pwd.h>
 # include <string.h>
 # include <grp.h>
-# if defined(CONFIG_OS_DARWIN) && defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__  <= 1058
-#  include <pam/pam_appl.h>
-# else
-#  include <security/pam_appl.h>
-# endif
+// JBOREAN CHANGE: Not needed for WSMan client and removes the number of deps present
+//# if defined(CONFIG_OS_DARWIN) && defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__  <= 1058
+//#  include <pam/pam_appl.h>
+//# else
+//#  include <security/pam_appl.h>
+//# endif
 # include <signal.h>
 # include <sys/wait.h>
 # include <sys/socket.h>
@@ -49,21 +50,26 @@ static PermissionGroups *s_deniedList = NULL;
 
 const char* GetHomeDir()
 {
+    // JBOREAN CHANGE: Not needed for WSMan client.
+    return NULL;
+
+    /*
     char* home = NULL;
     struct passwd *pwd = NULL;
 
     errno = 0;
-    /* getuid() is always successful */
+    // getuid() is always successful
     pwd = getpwuid(getuid());
     if (pwd == NULL)
     {
         return NULL;
     }
 
-    /* copy pw_dir since we do not own pwd */
+    // copy pw_dir since we do not own pwd
     home = PAL_Strdup(pwd->pw_dir);
 
     return (const char*)home;
+    */
 }
 
 
@@ -71,6 +77,8 @@ static int GetGroupName(
     gid_t gid,
     char name[GROUPNAME_SIZE]);
 
+// JBOREAN CHANGE: Not needed for WSMan Client
+/*
 static int _authCallback(
     int numMessages,
 #if defined(CONFIG_OS_LINUX) || defined(CONFIG_OS_DARWIN) || defined(CONFIG_OS_BSD)
@@ -84,14 +92,14 @@ static int _authCallback(
     const char* password = (const char*)applicationData;
     int i;
 
-    /* If zero (or megative) messages, return now */
+    // If zero (or megative) messages, return now
 
     if (numMessages <= 0)
     {
         return PAM_CONV_ERR;
     }
 
-    /* Allocate the responses */
+    // Allocate the responses
 
     *response = (struct pam_response*)SystemCalloc(
         numMessages, 
@@ -102,7 +110,7 @@ static int _authCallback(
         return PAM_BUF_ERR;
     }
 
-    /* Copy the password to the response messages */
+    // Copy the password to the response messages
 
     for (i = 0; i < numMessages; i++)
     {
@@ -120,11 +128,16 @@ static int _authCallback(
 
     return PAM_SUCCESS;
 }
+*/
 
 int PamCheckUser(
     const char* user, 
     const char* password)
 {
+    // JBOREAN CHANGE: Not needed for WSMan client
+    return -1;
+
+    /*
     struct pam_conv conv;
     pam_handle_t* t = 0;
 
@@ -161,6 +174,7 @@ int PamCheckUser(
     pam_end(t,close_ret);
 
     return 0;
+    */
 }
 
 static int _CreateChildProcess(

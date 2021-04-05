@@ -2,16 +2,18 @@
     "container_image": "alpine:3",
     "package_manager": "apk",
     "microsoft_repo": "",
+    "openssl_version": "1.1.1k",
     "shell": "/bin/sh",
     "build_deps": [
         "build-base",
         "cmake",
         "git",
         "krb5-dev",
+        "linux-headers",
         "make",
-        "openssl",
-        "openssl-dev",
-        "pkgconf"
+        "perl",
+        "pkgconf",
+        "zlib-dev"
     ],
     "test_deps": [
         "source:gss-ntlmssp",
@@ -28,7 +30,6 @@
         "libtool",
         "libunistring-dev",
         "make",
-        "openssl",
         "openssl-dev",
         "samba-dev",
         "zlib-dev"

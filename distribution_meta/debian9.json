@@ -4,12 +4,9 @@
     "microsoft_repo": "https://packages.microsoft.com/config/debian/9/multiarch/packages-microsoft-prod.deb",
     "build_deps": [
         "cmake",
-        "g++",
         "git",
         "libkrb5-dev",
-        "libpam-dev",
         "libssl-dev",
-        "lsb-release",
         "make",
         "openssl",
         "pkg-config"
@@ -18,6 +15,7 @@
         "gss-ntlmssp",
         "krb5-user",
         "libkrb5-dev",
+        "openssl",
         "powershell"
     ],
     "cert_staging_dir": "/usr/local/share/ca-certificates",

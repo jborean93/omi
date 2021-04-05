@@ -1,22 +1,19 @@
 {
-    "container_image": "fedora:31",
-    "package_manager": "dnf",
+    "container_image": "centos:7",
+    "package_manager": "yum",
     "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
+    "openssl_version": "3.0.0-alpha13",
     "build_deps": [
         "cmake",
-        "bind-utils",
         "gcc",
-        "gcc-c++",
         "git",
         "krb5-devel",
         "make",
-        "openssl",
-        "openssl-devel",
-        "pam-devel",
-        "redhat-lsb-core",
-        "rpm-build",
-        "rpm-devel",
-        "which"
+        "perl-Data-Dumper",
+        "perl-IPC-Cmd",
+        "wget",
+        "which",
+        "zlib-devel"
     ],
     "test_deps": [
         "gssntlmssp",

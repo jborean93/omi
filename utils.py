@@ -218,13 +218,16 @@ def complete_distribution():  # type: () -> List[str]
     """ Finds valid distributions that this repo knows how to build for. """
     distributions = []
 
-    if sys.platform == 'darwin':
-        distributions.append('macOS')
+    on_macos = sys.platform == 'darwin'
 
     for path in os.listdir(os.path.join(OMI_REPO, 'distribution_meta')):
         full_path = os.path.join(OMI_REPO, 'distribution_meta', path)
 
-        if not os.path.isfile(full_path) or not path.endswith('.json') or path == 'macOS.json':
+        if (
+            not os.path.isfile(full_path) or
+            not path.endswith('.json') or
+            (path.startswith('macOS') and not on_macos)
+        ):
             continue
 
         distributions.append(os.path.splitext(path)[0])
@@ -284,7 +287,7 @@ def load_distribution_config(distribution):  # type: (str) -> Dict[str, any]
 
     required_keys = {'package_manager', 'build_deps', 'microsoft_repo', 'test_deps', 'cert_staging_dir',
         'cert_staging_cmd'}
-    optional_keys = {'container_image', 'cert_extension', 'shell'}
+    optional_keys = {'container_image', 'cert_extension', 'openssl_version', 'shell'}
     valid_keys = required_keys.union(optional_keys)
     actual_keys = set(distro_details.keys())
 
