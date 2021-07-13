@@ -3,6 +3,12 @@
 This is the changelog for this fork of OMI.
 It documents the changes in each of the tagged releases
 
+## 2.2.1 - TBD
+
++ Fixed up logic used to determine what library to use on unknown Linux distributions
+  + https://github.com/jborean93/omi/issues/30
+  + https://github.com/jborean93/omi/issues/31
+
 ## 2.2.0 - 2021-04-07
 
 + Created universal builds to be used across the various nix distributions
