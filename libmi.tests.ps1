@@ -9,7 +9,7 @@ $domain = $Global:Config.all.vars.domain_name
 $username = '{0}@{1}' -f ($Global:Config.all.vars.domain_username, $domain.ToUpper())
 $password = $Global:Config.all.vars.domain_password
 $hostname = '{0}.{1}' -f ([string]$Global:Config.all.children.windows.hosts.Keys, $domain)
-$Global:TestHostInfo = [PSCustomObject]@{  
+$Global:TestHostInfo = [PSCustomObject]@{
     Credential = [PSCredential]::new($Username, (ConvertTo-SecureString -AsPlainText -Force -String $Password))
     Hostname = $hostname
     HostnameIP = $Global:Config.all.children.windows.hosts.DC01.ansible_host
@@ -117,16 +117,6 @@ BeforeAll {
 }
 
 Describe "PSWSMan tests" {
-    It "Calculates the right distribution" {
-        $expected = $Global:Distribution
-        if ($expected.StartsWith('macOS')) {
-            $expected = 'macOS'
-        }
-
-        $actual = &(Get-Module PSWSMan) { Get-Distribution }
-        $actual | Should -Be $expected
-    }
-
     # We need to run as root for macOS as it creates symlinks which just makes the tests harder to run so skip that.
     It "Doesn't error when installing libs again" -Skip:($Global:Distribution.StartsWith('macOS')) {
         Install-WSMan -WarningVariable wv
@@ -438,7 +428,7 @@ Describe "Kerberos delegation" {
 [libdefaults]
   forwardable = true
 '@
-            
+
             $existingConfig = $env:KRB5_CONFIG
             [PSWSMan.Native]::setenv('KRB5_CONFIG', "$($tempConfig):$existingConfig")
             $actual = Invoke-Command @invokeParams

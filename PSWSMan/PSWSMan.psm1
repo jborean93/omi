@@ -490,7 +490,7 @@ Function Get-HostInfo {
         }
     }
 
-    Write-Verbose -Message "Host Info:`n$($info | Out-String)"
+    Write-Verbose -Message "Host Info:`n$($info | ConvertTo-Json)"
     $info
 }
 
@@ -929,7 +929,7 @@ Function Register-TrustedCertificate {
             elseif ('arch' -in $distroIds) {
                 '/etc/ca-certificates/trust-source/anchors', 'update-ca-trust extract'
             }
-            elseif ('debian' -in $distroIds -or 'ubuntu' -in $distroIds -or 'alpine' -in $distroIds) {
+            elseif ('alpine' -in $distroIds -or 'debian' -in $distroIds -or 'ubuntu' -in $distroIds) {
                 # While the format of the file is the same, these distributions expect the files to have a .crt extension.
                 $certExtension = 'crt'
                 '/usr/local/share/ca-certificates', 'update-ca-certificates'
