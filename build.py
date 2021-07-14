@@ -56,11 +56,10 @@ make install_sw'''.format(openssl_version, compile_arg, build_path, jobs)
 
     script_steps.append(('Compiling OpenSSL %s' % openssl_version, compile_openssl))
 
-    # TODO: Enable this once AZP opens up the Big Sur agents so we can actually run this in CI.
-    if distribution.startswith('macOS') and False:
+    if distribution.startswith('macOS'):
         # We want to create a fat (x64 and arm) library so we can compile mi for arm.
         compile_openssl = '''
-MACOSX_DEPLOYMENT_TARGET=10.15 ./Configure \
+./Configure \
     darwin64-arm64-cc shared \
     '--prefix={0}-arm64'
 make clean
@@ -190,7 +189,12 @@ cd repo'''))
     script_steps.append(('Applying psl-omi-provider patches', '\n'.join(['''echo "Applying '{0}'"
 git apply "${{OMI_REPO}}/psl-omi-provider/{0}"'''.format(p) for p in psl_patches])))
 
-    built_type = 'Debug' if args.debug else 'Release'
+    cmake_args = {'CMAKE_BUILD_TYPE': 'Debug' if args.debug else 'Release'}
+    if distribution.startswith('macOS'):
+        cmake_args['CMAKE_OSX_ARCHITECTURES'] = 'arm64;x86_64'
+
+    cmake_arg_string = " ".join(["-D%s='%s'" % (a, v) for a, v in cmake_args.items()])
+
     script_steps.append(('Building libpsrpclient', '''rm -rf omi
 ln -s "${{OMI_REPO}}" omi
 
@@ -201,9 +205,9 @@ ln -s {0} omi/Unix/output
 
 cd src
 echo -e "Running cmake with\\n\\t-DCMAKE_BUILD_TYPE={1}"
-cmake -DCMAKE_BUILD_TYPE={1} .
+cmake {1} .
 make psrpclient
-cp libpsrpclient.* "${{OMI_REPO}}/PSWSMan/lib/{2}/"'''.format(output_dirname, built_type, distribution)))
+cp libpsrpclient.* "${{OMI_REPO}}/PSWSMan/lib/{2}/"'''.format(output_dirname, cmake_arg_string, distribution)))
 
     if distribution.startswith('macOS'):
         script_steps.append(('Patch libmi dylib path for libpsrpclient',
@@ -240,6 +244,12 @@ otool -L "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib"
 
 echo "libmi links"
 otool -L "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.dylib"
+
+echo "libmi architecture info"
+lipo -archs "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.dylib"
+
+echo "libpsrpclient architecture info"
+lipo -archs "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib"
 '''.format(distribution)))
 
     else:
