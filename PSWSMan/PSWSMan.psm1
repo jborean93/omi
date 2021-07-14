@@ -310,6 +310,36 @@ Function Get-OpenSSLInfo {
     }
 }
 
+Function Get-MacOSCommand {
+    <#
+    .SYNOPSIS
+    Get the full path to a binary from a list of locations.
+
+    .NOTES
+    Selects the best match when the architecture is the same as pwsh.
+    #>
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [String[]]
+        $Location
+    )
+
+    $desiredArch = 'x86_64'  # FIXME: Figure out how to get this from runtime.
+    foreach ($path in $Location) {
+        $app = Get-Command -Name $path -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $app) {
+            continue
+        }
+
+        $fullPath = $app.Path
+        $archs = (lipo -archs $fullPath) -split " "
+        if ($desiredArch -in $archs) {
+            return $fullPath
+        }
+    }
+}
+
 Function Get-MacOSOpenSSL {
     <#
     .SYNOPSIS
@@ -322,34 +352,47 @@ Function Get-MacOSOpenSSL {
 
     $libCrypto = $null
     $libSSL = $null
+    $desiredArch = 'x86_64'  # FIXME: Figure out how to get this from runtime.
 
-    if (Get-Command -Name brew -CommandType Application -ErrorAction SilentlyContinue) {
-        $brewInfo = exec brew --prefix openssl
-        $msg = "Attempting to get OpenSSL info with brew --prefix openssl`nSTDOUT: {0}`nSTDERR: {1}`nRC: {2}" -f (
+    # Try a few locations just in case it's not in the PATH or the wrong architecture it
+    foreach ($brewPath in @('brew', '/usr/local/bin/brew', '/opt/homebrew/bin/brew')) {
+        $app = Get-Command -Name $brewPath -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $app) {
+            continue
+        }
+
+        $brewPath = $app.Path
+        $archs = (lipo -archs $brewPath) -split " "
+        if ($desiredArch -notin $archs) {
+            continue
+        }
+
+        $brewInfo = exec $brewPath --prefix openssl
+        $msg = "Attempting to get OpenSSL info with $brewPath --prefix openssl`nSTDOUT: {0}`nSTDERR: {1}`nRC: {2}" -f (
             $brewInfo.Stdout, $brewInfo.Stderr, $brewInfo.ExitCode)
         Write-Verbose -Message $msg
 
         if ($brewInfo.ExitCode -eq 0) {
-            $brewLibCrypto = Join-Path -Path $brewInfo.Stdout.Trim() lib libcrypto.dylib
-            if (Test-Path -LiteralPath $brewLibCrypto) {
-                Write-Verbose "Brew libcrypto exists at '$brewLibCrypto'"
-                $libCrypto = $brewLibCrypto
-            }
+            continue
+        }
+        
+        $brewLibCrypto = Join-Path -Path $brewInfo.Stdout.Trim() lib libcrypto.dylib
+        if (Test-Path -LiteralPath $brewLibCrypto) {
+            Write-Verbose "Brew libcrypto exists at '$brewLibCrypto'"
+            $libCrypto = $brewLibCrypto
+        }
 
-            $brewLibSSL = Join-Path -Path $brewInfo.Stdout.Trim() lib libssl.dylib
-            if (Test-Path -LiteralPath $brewLibSSL) {
-                Write-Verbose "Brew libssl exists at '$brewLibCrypto'"
-                $libSSL = $brewLibSSL`
-            }
+        $brewLibSSL = Join-Path -Path $brewInfo.Stdout.Trim() lib libssl.dylib
+        if (Test-Path -LiteralPath $brewLibSSL) {
+            Write-Verbose "Brew libssl exists at '$brewLibCrypto'"
+            $libSSL = $brewLibSSL`
         }
     }
 
-    if (
-        -not ($libCrypto -and $libSSL) -and
-        (Get-Command -Name port -CommandType Application -ErrorAction SilentlyContinue)
-    ) {
-        $portInfo = exec port contents openssl
-        Write-Verbose -Message "Attempting to get OpenSSL info port contents openssl"
+    $macPortsPath = Get-MacOSCommand 'port', '/opt/local/bin/port'
+    if (-not ($libCrypto -and $libSSL) -and $macPortsPath) {
+        $portInfo = exec $macPortsPath contents openssl
+        Write-Verbose -Message "Attempting to get OpenSSL info $macPortsPath contents openssl"
 
         $portLibSSL = $null
         $portLibCrypto = $null
