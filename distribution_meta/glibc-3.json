@@ -4,6 +4,7 @@
     "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
     "openssl_version": "3.0.0-alpha13",
     "build_deps": [
+        "ca-certificates",
         "cmake",
         "gcc",
         "git",
@@ -16,6 +17,7 @@
         "zlib-devel"
     ],
     "test_deps": [
+        "ca-certificates",
         "gssntlmssp",
         "krb5-devel",
         "krb5-workstation",
