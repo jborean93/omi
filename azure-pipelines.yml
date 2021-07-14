@@ -10,7 +10,7 @@ trigger:
 stages:
 - stage: Build
   jobs:
-  
+
   - job: Linux
     pool:
       vmImage: ubuntu-18.04
@@ -53,6 +53,7 @@ stages:
     - script: ./build.py $(distribution)
       env:
         OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
+        SDKROOT: macosx11.1  # Required to build aarch64 libraries on AZP.
       displayName: Build
 
     - task: PublishPipelineArtifact@1

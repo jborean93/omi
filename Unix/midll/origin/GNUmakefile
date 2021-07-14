@@ -18,7 +18,8 @@ include $(TOP)/mak/rules.mak
 
 # Setting this after rules as we are overriding the default one we use
 ifeq ($(OS),DARWIN)
-LIBNAMEOPT=$(shell $(BUILDTOOL) libname @rpath/$(shell $(BUILDTOOL) shlibname mi))
+# JBOREAN CHANGE: Build the library for both x86_64 and arm64 on macOS
+LIBNAMEOPT=$(shell $(BUILDTOOL) libname @rpath/$(shell $(BUILDTOOL) shlibname mi)) -arch x86_64 -arch arm64
 else
 LIBPATHFLAGS = $(shell $(BUILDTOOL) libpath \'\$$ORIGIN\' )
 endif

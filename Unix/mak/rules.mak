@@ -141,6 +141,9 @@ CFLAGS+=$(OPENSSL_CFLAGS)
 CXXFLAGS=$(shell $(BUILDTOOL) cxxflags $(__OPTS))
 CXXFLAGS+=$(OPENSSL_CFLAGS)
 
+# JBOREAN CHANGE: Support passing in custom flags for ar (allows use of libtool on macOS)
+ARFLAGS=$(shell $(BUILDTOOL) arflags)
+
 ifdef DISABLE_LIBPATH
   LIBPATHFLAGS:=
 else
@@ -203,7 +206,7 @@ ifdef ENABLE_SECTIONS
   CPROGFLAGS+=-Wl,--gc-sections
   CSHLIBFLAGS+=-Wl,--gc-sections
   CXXFLAGS+=-ffunction-sections -fdata-sections
-  CXXPROGFLAGS+=-Wl,--gc-sections 
+  CXXPROGFLAGS+=-Wl,--gc-sections
   CXXSHLIBFLAGS+=-Wl,--gc-sections
   #PRINT_UNUSED_SECTIONS=1
   ifdef PRINT_UNUSED_SECTIONS
@@ -244,9 +247,10 @@ endif
 
 TARGET = $(LIBDIR)/lib$(LIBRARY).a
 
+# JBOREAN CHANGE: Support passing in ar flags
 $(TARGET): $(__OBJECTS)
 	mkdir -p $(LIBDIR)
-	$(AR) r $(TARGET) $(__OBJECTS)
+	$(AR) $(ARFLAGS) $(TARGET) $(__OBJECTS)
 	@ echo
 
 # ranlib $(TARGET)
@@ -284,7 +288,7 @@ endif
 
 $(TARGET): $(__OBJECTS) $(__DEPS)
 	mkdir -p $(LIBDIR)
-	$(CC) -o $(TARGET) $(__OBJECTS) -L$(LIBDIR) $(OPENSSL_LIBOPT) $(__LIBRARIES) $(CSHLIBFLAGS) $(LIBNAMEOPT) 
+	$(CC) -o $(TARGET) $(__OBJECTS) -L$(LIBDIR) $(OPENSSL_LIBOPT) $(__LIBRARIES) $(CSHLIBFLAGS) $(LIBNAMEOPT)
 ifdef DEVBUILD
 ifndef SUPPRESS_CHKSHLIB
 	$(BINDIR)/chkshlib $(TARGET) || ( rm -rf $(TARGET) && false )

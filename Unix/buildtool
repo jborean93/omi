@@ -159,6 +159,8 @@ COMMANDS:
         Print compiler flags used to create a C program.
     cxxprogflags [--libpath=PATH]
         Print compiler flags used to create a C++ program.
+    arflags
+        Print archiver flags used to create lib archives.
     mkdep
         Print out command to build dependencies.
     syslibs
@@ -671,6 +673,10 @@ if [ "$arg1" = "ar" ]; then
         NETBSD_IX86_GNU)
             echo netbsd-ar
             ;;
+        # JBOREAN CHANGE: Use libtool on macOS to support fat binaries
+        DARWIN_IX86_GNU)
+            echo libtool
+            ;;
         *)
             echo ar
             ;;
@@ -939,6 +945,7 @@ if [ "$arg1" = "cflags" -o "$arg1" = "cxxflags" ]; then
             r="$r -fvisibility=hidden"
             r="$r -fstack-protector-all"
             r="$r -DGSS_USE_IOV=1"
+            r="$r -arch x86_64 -arch arm64"
             ;;
     esac
 
@@ -1174,6 +1181,36 @@ if [ "$arg1" = "cprogflags" -o "$arg1" = "cxxprogflags" ]; then
     esac
 
     echo $r
+    exit
+fi
+
+
+# JBOREAN CHANGE: Support arflags for libtool on macOS
+##==============================================================================
+##
+## 'arflags' command:
+##
+##==============================================================================
+
+if [ "$arg1" = "arflags" ]; then
+
+    if [ "$argc" != "1" -o "$opts" != "" ]; then
+        echo "Usage: $0 $arg1"
+        echo
+        exit 1
+    fi
+
+    r=""
+
+    case "$platform" in
+        DARWIN_IX86_GNU)
+            echo "-static -o"
+            ;;
+        *)
+            echo "r"
+    esac
+
+    echo "$r"
     exit
 fi
 
