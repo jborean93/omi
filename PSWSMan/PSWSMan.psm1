@@ -11,13 +11,13 @@ class X509CertificateChainAttribute : ArgumentTransformationAttribute {
             return $InputData
         }
 
-        $outputData = switch ($InputData) {
-            { ($_ -is [X509Certificate2]) } { [X509Certificate2Collection]::new($_) }
-            default {
-                throw [ArgumentTransformationMetadataException]::new(
-                    "Could not convert input '$_' to a valid X509Certificate2Collection object."
-                )
-            }
+        $outputData = switch($InputData) {
+             { ($_ -is [X509Certificate2]) } { [X509Certificate2Collection]::new($_) }
+             default {
+                 throw [ArgumentTransformationMetadataException]::new(
+                     "Could not convert input '$_' to a valid X509Certificate2Collection object."
+                 )
+             }
         }
         return $outputData
     }
@@ -40,7 +40,7 @@ namespace PSWSMan
             public Int32 Minor;
             public Int32 Build;
             public Int32 Revision;
-
+        
             public static explicit operator Version(PWSH_Version v)
             {
                 return new Version(v.Major, v.Minor, v.Build, v.Revision);
@@ -89,7 +89,7 @@ namespace PSWSMan
 
                     var function = (OpenSSL_version_num_ptr)Marshal.GetDelegateForFunctionPointer(
                         functionAddr, typeof(OpenSSL_version_num_ptr));
-                    return function();
+                    return function();                    
                 }
 
                 return 0;
@@ -160,19 +160,19 @@ Function exec {
     #>
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true, Position = 0)]
+        [Parameter(Mandatory=$true, Position=0)]
         [String]
         $FilePath,
 
-        [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
+        [Parameter(Position=1, ValueFromRemainingArguments=$true)]
         [String[]]
         $Arguments
     )
 
     $psi = [Diagnostics.ProcessStartInfo]@{
-        FileName               = $FilePath
-        Arguments              = ($Arguments -join ' ')
-        RedirectStandardError  = $true
+        FileName = $FilePath
+        Arguments = ($Arguments -join ' ')
+        RedirectStandardError = $true
         RedirectStandardOutput = $true
     }
     $proc = [Diagnostics.Process]::Start($psi)
@@ -181,7 +181,7 @@ Function exec {
     $stderr = [Text.StringBuilder]::new()
     $eventParams = @{
         InputObject = $proc
-        Action      = {
+        Action = {
             if (-not [System.String]::IsNullOrEmpty($EventArgs.Data)) {
                 $Event.MessageData.AppendLine($EventArgs.Data)
             }
@@ -200,8 +200,8 @@ Function exec {
 
 
     [PSCustomObject]@{
-        Stdout   = $stdout.ToString()
-        Stderr   = $stderr.ToString()
+        Stdout = $stdout.ToString()
+        Stderr = $stderr.ToString()
         ExitCode = $proc.ExitCode
     }
 }
@@ -213,11 +213,11 @@ Function setenv {
     #>
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true, Position = 0)]
+        [Parameter(Mandatory=$true, Position=0)]
         [String]
         $Name,
 
-        [Parameter(Position = 1)]
+        [Parameter(Position=1)]
         [AllowEmptyString()]
         $Value
     )
@@ -225,7 +225,7 @@ Function setenv {
     # We need to use the native setenv call as .NET keeps it's own register of env vars that are separate from the
     # process block that native libraries like libmi sees. We still set the .NET env var to keep things in sync.
     [PSWSMan.Native]::setenv($Name, $Value)
-    Set-Item -LiteralPath env:$Name -Value $Value
+    Set-Item -LiteralPath env:$Name -Value $Value    
 }
 
 Function unsetenv {
@@ -235,7 +235,7 @@ Function unsetenv {
     #>
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true, Position = 0)]
+        [Parameter(Mandatory=$true, Position=0)]
         [String]
         $Name
     )
@@ -301,14 +301,14 @@ Function Get-OpenSSLInfo {
     $sslDir = [PSWSMan.Native]::OpenSSL_version($sslPaths, 4)  # OPENSSL_DIR
     $sslDir = if ($sslDir) {
         $sslDir |
-        Select-String -Pattern 'OPENSSLDIR:\s+[\"|''](.*)[\"|'']$' |
-        ForEach-Object -Process { $_.Matches[0].Groups[1].Value } |
-        Select-Object -First 1
+            Select-String -Pattern 'OPENSSLDIR:\s+[\"|''](.*)[\"|'']$' |
+            ForEach-Object -Process { $_.Matches[0].Groups[1].Value } |
+            Select-Object -First 1
     }
 
     [PSCustomObject]@{
         Version = $version
-        SSLDir  = $sslDir
+        SSLDir = $sslDir
     }
 }
 
@@ -342,7 +342,6 @@ Function Get-MacOSOpenSSL {
             if (Test-Path -LiteralPath $brewLibSSL) {
                 Write-Verbose "Brew libssl exists at '$brewLibCrypto'"
                 $libSSL = $brewLibSSL`
-
             }
         }
     }
@@ -356,7 +355,7 @@ Function Get-MacOSOpenSSL {
 
         $portLibSSL = $null
         $portLibCrypto = $null
-
+        
         $portInfo.Stdout -split '\r?\n' | ForEach-Object -Process {
             $line = $_.Trim()
             if (-not $line.StartsWith('/') -or ($portLibSSL -and $portLibCrypto)) {
@@ -375,7 +374,7 @@ Function Get-MacOSOpenSSL {
             Write-Verbose "Port libcrypto exists at '$portLibCrypto'"
             $libCrypto = $portLibCrypto
         }
-
+        
         if ($portLibSSL -and (Test-Path -LiteralPath $portLibSSL)) {
             Write-Verbose "Port libssl exists at '$portLibSSL'"
             $libSSL = $portLibSSL
@@ -384,7 +383,7 @@ Function Get-MacOSOpenSSL {
 
     [PSCustomObject]@{
         LibCrypto = $libCrypto
-        LibSSL    = $libSSL
+        LibSSL = $libSSL
     }
 }
 
@@ -413,7 +412,7 @@ Function Get-HostInfo {
             if ($libDetails.LibCrypto -and $libDetails.LibSSL) {
                 $opensslVersion = (Get-OpenSSLInfo -LibSSL $libDetails.LibSSL).Version
                 Write-Verbose -Message ("OpenSSL Version: Major {0} Minor {1} Patch {2}" -f (
-                        $opensslVersion.Major, $opensslVersion.Minor, $opensslVersion.Build))
+                    $opensslVersion.Major, $opensslVersion.Minor, $opensslVersion.Build))
 
                 $openssl, $cryptoSource, $sslSource = switch ($opensslVersion) {
                     { $_.Major -eq 1 -and $_.Minor -eq 1 } { '1.1', 'libcrypto.1.1.dylib', 'libssl.1.1.dylib' }
@@ -424,13 +423,13 @@ Function Get-HostInfo {
 
                 [PSCustomObject]@{
                     Distribution = $distribution
-                    StandardLib  = 'macOS'
-                    OpenSSL      = $openssl
-                    LibCrypto    = @{
+                    StandardLib = 'macOS'
+                    OpenSSL = $openssl
+                    LibCrypto = @{
                         Source = $cryptoSource
                         Target = $libDetails.LibCrypto
                     }
-                    LibSSL       = @{
+                    LibSSL = @{
                         Source = $sslSource
                         Target = $libDetails.LibSSL
                     }
@@ -440,7 +439,7 @@ Function Get-HostInfo {
         default {
             $opensslVersion = (Get-OpenSSLInfo).Version
             Write-Verbose -Message ("OpenSSL Version: Major {0} Minor {1} Patch {2}" -f (
-                    $opensslVersion.Major, $opensslVersion.Minor, $opensslVersion.Build))
+                $opensslVersion.Major, $opensslVersion.Minor, $opensslVersion.Build))
 
             $openssl = switch ($opensslVersion) {
                 { $_.Major -eq 1 -and $_.Minor -eq 0 } { '1.0' }
@@ -489,10 +488,10 @@ Function Get-HostInfo {
 
             [PSCustomObject]@{
                 Distribution = $distribution
-                StandardLib  = $cStd
-                OpenSSL      = $openssl
-                LibCrypto    = $libCrypto
-                LibSSL       = $libSSL
+                StandardLib = $cStd
+                OpenSSL = $openssl
+                LibCrypto = $libCrypto
+                LibSSL = $libSSL
             }
         }
     }
@@ -515,7 +514,7 @@ Function Get-Distribution {
                     if (-not $_.Trim() -or -not $_.Contains('=')) {
                         return
                     }
-
+                
                     $key, $value = $_.Split('=', 2)
                     if ($value.StartsWith('"')) {
                         $value = $value.Substring(1)
@@ -544,11 +543,11 @@ Function Get-Distribution {
                     'debian' { "debian$($osRelease.VERSION_ID)" }
                     'fedora' { "fedora$($osRelease.VERSION_ID)" }
                     'ubuntu' { "ubuntu$($osRelease.VERSION_ID)" }
-                    'rhel' { "rhel$($osRelease.VERSION_ID)" }
                 }
             }
         }
     }
+
     $distribution
 }
 
@@ -582,17 +581,17 @@ Function Disable-WSManCertVerification {
     These checks are set through environment vars which are scoped to a process and are not set to a specific
     connection. Unless you've set the specific env vars yourself then cert verification is enabled by default.
     #>
-    [CmdletBinding(DefaultParameterSetName = 'Individual')]
+    [CmdletBinding(DefaultParameterSetName='Individual')]
     param (
-        [Parameter(ParameterSetName = 'Individual')]
+        [Parameter(ParameterSetName='Individual')]
         [Switch]
         $CACheck,
 
-        [Parameter(ParameterSetName = 'Individual')]
+        [Parameter(ParameterSetName='Individual')]
         [Switch]
         $CNCheck,
 
-        [Parameter(ParameterSetName = 'All')]
+        [Parameter(ParameterSetName='All')]
         [Switch]
         $All
     )
@@ -641,17 +640,17 @@ Function Enable-WSManCertVerification {
     These checks are set through environment vars which are scoped to a process and are not set to a specific
     connection. Unless you've set the specific env vars yourself then cert verification is enabled by default.
     #>
-    [CmdletBinding(DefaultParameterSetName = 'Individual')]
+    [CmdletBinding(DefaultParameterSetName='Individual')]
     param (
-        [Parameter(ParameterSetName = 'Individual')]
+        [Parameter(ParameterSetName='Individual')]
         [Switch]
         $CACheck,
 
-        [Parameter(ParameterSetName = 'Individual')]
+        [Parameter(ParameterSetName='Individual')]
         [Switch]
         $CNCheck,
 
-        [Parameter(ParameterSetName = 'All')]
+        [Parameter(ParameterSetName='All')]
         [Switch]
         $All
     )
@@ -692,7 +691,7 @@ Function Get-WSManVersion {
     param ()
 
     $nameMap = [Ordered]@{
-        MI   = 'mi'
+        MI = 'mi'
         PSRP = 'psrpclient'
     }
 
@@ -743,7 +742,7 @@ Function Install-WSMan {
     Once updated, PowerShell must be restarted for the library to be usable. This is a limitation of how the libraries
     are loaded in a process. The function will warn if one of the libraries has been changed and a restart is required.
     #>
-    [CmdletBinding(SupportsShouldProcess = $true)]
+    [CmdletBinding(SupportsShouldProcess=$true)]
     param (
         [String]
         $Distribution
@@ -788,7 +787,7 @@ Function Install-WSMan {
                 Write-Verbose -Message "Creating backup of $($_.Name) to $($_.Name).bak"
                 Copy-Item -LiteralPath $destPath -Destination "$($destPath).bak" -Force
             }
-
+            
             Copy-Item -LiteralPath $_.Fullname -Destination $destPath
             $notify = $true
         }
@@ -796,11 +795,11 @@ Function Install-WSMan {
 
     # These symlinks are either no longer needed or we set them to our own path.
     Get-Item -Path (Join-Path -Path $pwshDir -ChildPath 'lib*.so*') |
-    Where-Object { $_.Name -match 'lib(ssl|crypto)\.so.*' } |
-    ForEach-Object -Process {
-        Write-Verbose -Message "Removing existing symlink '$($_.FullName)'"
-        $_ | Remove-Item -Force
-    }
+        Where-Object { $_.Name -match 'lib(ssl|crypto)\.so.*' } |
+        ForEach-Object -Process {
+            Write-Verbose -Message "Removing existing symlink '$($_.FullName)'"
+            $_ | Remove-Item -Force
+        }
 
     $hostInfo.LibCrypto, $hostInfo.LibSSL | ForEach-Object -Process {
         if (-not $_) {
@@ -873,7 +872,7 @@ Function Register-TrustedCertificate {
     This function needs to place files into trusted directories which typically require root access. This function
     needs to be running as root for it to succeed.
     #>
-    [CmdletBinding(SupportsShouldProcess = $true, DefaultParameterSetName = 'Path')]
+    [CmdletBinding(SupportsShouldProcess=$true, DefaultParameterSetName='Path')]
     param (
         [String]
         $Name,
@@ -881,21 +880,21 @@ Function Register-TrustedCertificate {
         [Switch]
         $Sudo,
 
-        [Parameter(Mandatory = $true, ParameterSetName = 'Path', ValueFromPipeline = $true,
-            ValueFromPipelineByPropertyName = $true)]
+        [Parameter(Mandatory=$true, ParameterSetName='Path', ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true)]
         [SupportsWildcards()]
         [ValidateNotNullOrEmpty()]
         [String[]]
         $Path,
 
-        [Parameter(Mandatory = $true, ParameterSetName = 'LiteralPath', ValueFromPipelineByPropertyName = $true)]
+        [Parameter(Mandatory=$true, ParameterSetName='LiteralPath', ValueFromPipelineByPropertyName=$true)]
         [Alias('PSPath')]
         [ValidateNotNullOrEmpty()]
         [String[]]
         $LiteralPath,
 
-        [Parameter(Mandatory = $true, ParameterSetName = 'Certificate', ValueFromPipeline = $true,
-            ValueFromPipelineByPropertyName = $true)]
+        [Parameter(Mandatory=$true, ParameterSetName='Certificate', ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true)]
         [X509CertificateChainAttribute()]
         [X509Certificate2Collection]
         $Certificate
@@ -936,7 +935,7 @@ Function Register-TrustedCertificate {
 
                 (Join-Path -Path $certDirectory -ChildPath certs), $cRehash
             }
-            { $_ -like 'centos*' -or $_ -like 'fedora*' -or $_ -like 'rhel*' } {
+            { $_ -like 'centos*' -or $_ -like 'fedora*' } {
                 '/etc/pki/ca-trust/source/anchors', 'update-ca-trust extract'
             }
             { $_ -like 'alpine*' -or $_ -like 'debian*' -or $_ -like 'ubuntu*' } {
@@ -1065,8 +1064,7 @@ Function Register-TrustedCertificate {
                 Write-Verbose -Message "Refreshing the trusted certificate directory with '$refreshCommand'"
                 Invoke-Expression -Command $refreshCommand
             }
-        }
-        finally {
+        } finally {
             Remove-Item -LiteralPath $tempFile -Force
         }
     }
