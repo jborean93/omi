@@ -8,7 +8,7 @@
         "pkg-config"
     ],
     "test_deps": [
-        "openssl",
+        "openssl@1.1",
         "cask:powershell"
     ],
     "cert_staging_dir": "/usr/local/etc/openssl@1.1/certs",

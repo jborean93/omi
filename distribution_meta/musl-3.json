@@ -2,7 +2,7 @@
     "container_image": "alpine:3",
     "package_manager": "apk",
     "microsoft_repo": "",
-    "openssl_version": "3.0.0-alpha13",
+    "openssl_version": "3.0.0",
     "shell": "/bin/sh",
     "build_deps": [
         "build-base",

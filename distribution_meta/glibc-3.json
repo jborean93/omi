@@ -2,7 +2,7 @@
     "container_image": "centos:7",
     "package_manager": "yum",
     "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
-    "openssl_version": "3.0.0-alpha13",
+    "openssl_version": "3.0.0",
     "build_deps": [
         "ca-certificates",
         "cmake",

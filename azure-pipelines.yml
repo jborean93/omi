@@ -10,7 +10,7 @@ trigger:
 stages:
 - stage: Build
   jobs:
-  
+
   - job: Linux
     pool:
       vmImage: ubuntu-18.04
@@ -53,6 +53,7 @@ stages:
     - script: ./build.py $(distribution)
       env:
         OMI_BUILDVERSION_BUILDNR: $(Build.BuildId)
+        SDKROOT: macosx11.1  # Required to build aarch64 libraries on AZP.
       displayName: Build
 
     - task: PublishPipelineArtifact@1
@@ -109,6 +110,12 @@ stages:
   - job: macOS
     pool:
       vmImage: macOS-10.15
+    strategy:
+      matrix:
+        OpenSSL-1.1:
+          distribution: macOS-1.1
+        OpenSSL-3:
+          distribution: macOS-3
 
     steps:
     - task: DownloadPipelineArtifact@2
@@ -121,7 +128,7 @@ stages:
         Write-Host "##vso[task.setvariable variable=BuildVersion]${version}"
       displayName: Get module version
 
-    - script: ./test.py macOS-1.1 --verify-version $(BuildVersion)
+    - script: ./test.py $(distribution) --verify-version $(BuildVersion)
       displayName: Check compiled libraries are loadable and are set to the correct version
 
 - stage: Publish
