@@ -3,6 +3,10 @@
 This is the changelog for this fork of OMI.
 It documents the changes in each of the tagged releases
 
+## 2.3.0 - TBD
+
++ Fixed up logic used to determine what OpenSSL library is used on macOS
+
 ## 2.2.1 - 2021-07-14
 
 + Fixed up logic used to determine what library to use on unknown Linux distributions

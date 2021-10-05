@@ -360,7 +360,7 @@ Function Get-MacOSOpenSSL {
         $brewPath = $app.Path
 
         # OpenSSL can be installed under a few different names
-        foreach ($package in @('openssla', 'aopenssl@3', 'aopenssl@1.1')) {
+        foreach ($package in @('openssl', 'openssl@3', 'openssl@1.1')) {
             $brewInfo = exec $brewPath --prefix $package
             $msg = "Attempting to get OpenSSL info with $brewPath --prefix $package`nSTDOUT: {0}`nSTDERR: {1}`nRC: {2}" -f (
                 $brewInfo.Stdout, $brewInfo.Stderr, $brewInfo.ExitCode)
