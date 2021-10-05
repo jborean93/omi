@@ -93,8 +93,8 @@ echo "%s" > /tmp/distro.txt''' % distribution
         "pwsh -Command 'Import-Module ./PSWSMan; Get-WSManVersion'"))
 
     if distribution.startswith('macOS'):
-        script_steps.append(('Output libpsrpclient libraries', 'otool -L "${PWSHDIR}/libpsrpclient.dylib"'))
-        script_steps.append(('Output libmi libraries', 'otool -L "${PWSHDIR}/libmi.dylib"'))
+        script_steps.append(('Output libpsrpclient libraries', 'otool -L -arch all "${PWSHDIR}/libpsrpclient.dylib"'))
+        script_steps.append(('Output libmi libraries', 'otool -L -arch all "${PWSHDIR}/libmi.dylib"'))
 
     else:
         script_steps.append(('Output libpsrpclient libraries', 'ldd "${PWSHDIR}/libpsrpclient.so"'))

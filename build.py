@@ -240,15 +240,21 @@ for file in "${{LIB_DIR}}"/lib/lib*.dylib; do
             "${{file}}" \\
             "@loader_path/${{FILENAME}}" \\
             "${{OMI_REPO}}/PSWSMan/lib/{1}/libmi.dylib"
+
+        ARM64_LIB="$( dirname $( dirname "${{file}}" ) )-arm64/lib/${{FILENAME}}"
+        install_name_tool -change \\
+            "${{ARM64_LIB}}" \\
+            "@loader_path/${{FILENAME}}" \\
+            "${{OMI_REPO}}/PSWSMan/lib/{1}/libmi.dylib"
     fi
 done'''.format(openssl_version, distribution)))
 
         script_steps.append(('Output linked information',
             '''echo "libpsrpclient links"
-otool -L "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib"
+otool -L -arch all "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib"
 
 echo "libmi links"
-otool -L "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.dylib"
+otool -L -arch all "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.dylib"
 
 echo "libmi architecture info"
 lipo -archs "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.dylib"
