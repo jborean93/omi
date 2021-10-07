@@ -7,6 +7,7 @@ It documents the changes in each of the tagged releases
 
 + Added universal build for macOS to work with both x86_64 and arm64 processes
 + Fixed up logic used to determine what OpenSSL library is used on macOS
++ Changed `PSWSMan` to be a hybrid module for more robust loading and unloading behaviour
 
 ## 2.2.1 - 2021-07-14
 

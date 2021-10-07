@@ -1,12 +1,13 @@
 @{
-    ModuleVersion = '2.2.1'
+    ModuleVersion = '2.3.0'
     RootModule = 'PSWSMan'
     GUID = '92ec96bf-3ff4-41b2-8694-cd3ee636d3fd'
     Author = 'Jordan Borean'
     Copyright = 'Copyright (c) 2020 by Jordan Borean'
     Description = "Module to install and manage the forked WSMan client libraries for Linux and macOS.`nSee https://github.com/jborean93/omi for more details."
-    PowerShellVersion = '6.0'
+    PowerShellVersion = '7.0'
     CompatiblePSEditions = 'Core'
+    CmdletsToExport = @()
     FunctionsToExport = @(
         'Disable-WSManCertVerification',
         'Enable-WSManCertVerification',

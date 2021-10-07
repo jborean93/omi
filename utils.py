@@ -88,7 +88,7 @@ def build_package_command(package_manager, packages):  # type: (str, List[str]) 
             package_command += '''\n
 echo "Install gss-ntlmssp"
 git clone https://github.com/gssapi/gss-ntlmssp.git /tmp/gss-ntlmssp
-oldpath="$( pwd )" 
+oldpath="$( pwd )"
 cd /tmp/gss-ntlmssp
 autoreconf -f -i
 ./configure \\
@@ -216,7 +216,7 @@ rm -f repo.deb''' % repository
 
 def complete_distribution():  # type: () -> List[str]
     """ Finds valid distributions that this repo knows how to build for. """
-    distributions = []
+    distributions = ["module"]
 
     on_macos = sys.platform == 'darwin'
 
@@ -265,7 +265,7 @@ def get_version():  # type: () -> OMIVersion
     patch = None
 
     module_version_pattern = re.compile(r'^\s*ModuleVersion\s*=\s*[\"|\'](\d+)\.(\d+)\.(\d+)[\"|\']$')
-    with open(os.path.join(OMI_REPO, 'PSWSMan', 'PSWSMan.psd1'), mode='r') as fd:
+    with open(os.path.join(OMI_REPO, 'PSWSMan', 'module', 'PSWSMan.psd1'), mode='r') as fd:
         for line in fd:
             version_match = module_version_pattern.match(line)
             if version_match:

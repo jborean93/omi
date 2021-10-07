@@ -20,7 +20,6 @@ nits.log
 
 __pycache__/
 .idea/
-.vscode/
 *.pyc
 *.swp
 /build-*.sh
@@ -33,5 +32,21 @@ __pycache__/
 /integration_environment/cert_setup
 /integration_environment/exchange*
 /integration_environment/test_results.md
-/PSWSMan/lib/*
+/build
 /psl-omi-provider/repo
+
+# C# artifacts
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/

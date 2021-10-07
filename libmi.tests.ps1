@@ -1,7 +1,7 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-Import-Module ./PSWSMan
+Import-Module -Name PSWSMan
 Import-Module -Name powershell-yaml
 $Global:Config = ConvertFrom-Yaml -Yaml (Get-Content -LiteralPath $PSScriptRoot/integration_environment/inventory.yml -Raw)
 

@@ -11,6 +11,7 @@ import argparse
 import os
 import os.path
 import re
+import shutil
 import subprocess
 import tempfile
 import warnings
@@ -103,9 +104,99 @@ cd "${{OMI_REPO}}/Unix"
     ])
 
 
-def main():
-    """Main program body."""
-    args = parse_args()
+def copytree(src, dst):
+    """Like shutil.copytree but does't fail if dst exists."""
+    for item in os.listdir(src):
+        src_item = os.path.join(src, item)
+        dst_item = os.path.join(dst, item)
+
+        if not os.path.exists(dst):
+            os.makedirs(dst)
+
+        if os.path.isdir(src_item):
+            copytree(src_item, dst_item)
+        else:
+            shutil.copyfile(src_item, dst_item)
+
+
+def build_module(args):
+    """Build the PSWSMan module."""
+    configuration = 'Debug' if args.debug else 'Release'
+    framework = 'netcoreapp3.1'
+    version = "%s.%s.%s" % get_version()
+
+    module_path = os.path.join(OMI_REPO, 'PSWSMan', 'module')
+    publish_path = os.path.join(OMI_REPO, 'PSWSMan', 'src', 'bin', configuration, framework, 'publish')
+    build_path = os.path.join(OMI_REPO, 'build')
+    release_path = os.path.join(build_path, 'PSWSMan', version)
+    lib_path = os.path.join(build_path, 'lib')
+
+    if not args.skip_clear and os.path.exists(build_path):
+        if os.path.exists(release_path):
+            print("Clearing release path %s" % release_path)
+            shutil.rmtree(release_path)
+
+        for name in os.listdir(build_path):
+            if name.endswith('.nupkg'):
+                print("Clearing old nupkg %s" % name)
+                os.remove(os.path.join(build_path, name))
+
+    if not os.path.exists(release_path):
+        os.makedirs(release_path)
+
+    publish_args = [
+        'dotnet',
+        'publish',
+        '--configuration', configuration,
+        '--verbosity', 'q',
+        '-nologo',
+        '-p:Version=%s' % version,
+        '--framework', framework,
+    ]
+    subprocess.check_call(publish_args, cwd=os.path.join(OMI_REPO, 'PSWSMan', 'src'))
+
+    print("Copying build artifacts to %s" % release_path)
+    copytree(module_path, release_path)
+
+    bin_path = os.path.join(release_path, 'bin')
+    copytree(publish_path, bin_path)
+    copytree(lib_path, bin_path)
+
+    # Create the PSWSMan nupkg
+    pwsh_command = '''$ErrorActionPreference = 'Stop'
+
+$outputDir = '%s'
+$repoParams = @{
+    Name = 'PSWSManRepo'
+    SourceLocation = $outputDir
+    PublishLocation = $outputDir
+    InstallationPolicy = 'Trusted'
+}
+if (Get-PSRepository -Name $repoParams.Name -ErrorAction SilentlyContinue) {
+    Unregister-PSRepository -Name $repoParams.Name
+}
+Register-PSRepository @repoParams
+
+try {
+    Publish-Module -Path ./build/PSWSMan -Repository $repoParams.Name
+} finally {
+    Unregister-PSRepository -Name $repoParams.Name
+}
+''' % build_path
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1') as temp_fd:
+        temp_fd.write(pwsh_command)
+        temp_fd.flush()
+
+        print("Creating PSWSMan nupkg")
+        subprocess.check_call(['pwsh', '-File', temp_fd.name], cwd=OMI_REPO)
+
+    for name in os.listdir(build_path):
+        if name.endswith('.nupkg'):
+            print("Published PSWSMan to '%s'" % os.path.join(build_path, name))
+
+
+def build_omi(args):
+    """Builds libmi and libpsrpclient."""
     distribution = select_distribution(args)
     if not distribution:
         return
@@ -168,14 +259,14 @@ fi'''.format(output_dirname)
     script_steps.append(('Running configure', configure_script))
     script_steps.append(('Running make', 'make -j'))
     script_steps.append(('Copying libmi to pwsh build dir',
-        '''if [ -d '../PSWSMan/lib/{0}' ]; then
-    echo "Clearing existing build folder at 'PSWSMan/lib/{0}'"
-    rm -rf '../PSWSMan/lib/{0}'
+        '''if [ -d '../build/lib/{0}' ]; then
+    echo "Clearing existing build folder at 'build/lib/{0}'"
+    rm -rf '../build/lib/{0}'
 fi
-mkdir '../PSWSMan/lib/{0}'
+mkdir '../build/lib/{0}'
 
-echo "Copying '{1}/lib/libmi.{2}' -> 'PSWSMan/lib/{0}/'"
-cp '{1}/lib/libmi.{2}' '../PSWSMan/lib/{0}/\''''.format(distribution, output_dirname, library_extension)))
+echo "Copying '{1}/lib/libmi.{2}' -> 'build/lib/{0}/'"
+cp '{1}/lib/libmi.{2}' '../build/lib/{0}/\''''.format(distribution, output_dirname, library_extension)))
 
     script_steps.append(('Cloning upstream psl-omi-provider repo',
         '''cd ../psl-omi-provider
@@ -212,21 +303,21 @@ cd src
 echo -e "Running cmake with\\n\\t-DCMAKE_BUILD_TYPE={1}"
 cmake {1} .
 make psrpclient
-cp libpsrpclient.* "${{OMI_REPO}}/PSWSMan/lib/{2}/"'''.format(output_dirname, cmake_arg_string, distribution)))
+cp libpsrpclient.* "${{OMI_REPO}}/build/lib/{2}/"'''.format(output_dirname, cmake_arg_string, distribution)))
 
     if distribution.startswith('macOS'):
         script_steps.append(('Patch libmi dylib path for libpsrpclient',
-            '''echo "Patching '${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib' libmi location"
+            '''echo "Patching '${{OMI_REPO}}/build/lib/{0}/libpsrpclient.dylib' libmi location"
 install_name_tool -change \\
     '@rpath/libmi.dylib' \\
     '@loader_path/libmi.dylib' \\
-    "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib"'''.format(distribution)))
+    "${{OMI_REPO}}/build/lib/{0}/libpsrpclient.dylib"'''.format(distribution)))
 
         if distro_details['openssl_version']:
             openssl_version = distro_details['openssl_version']
 
         script_steps.append(('Patch OpenSSL dylib path for libmi',
-        '''echo "Patching '${{OMI_REPO}}/PSWSMan/lib/{1}/libmi.dylib' SSL locations"
+        '''echo "Patching '${{OMI_REPO}}/build/lib/{1}/libmi.dylib' SSL locations"
 
 LIB_DIR='/tmp/openssl-{0}-build'
 
@@ -239,37 +330,37 @@ for file in "${{LIB_DIR}}"/lib/lib*.dylib; do
         install_name_tool -change \\
             "${{file}}" \\
             "@loader_path/${{FILENAME}}" \\
-            "${{OMI_REPO}}/PSWSMan/lib/{1}/libmi.dylib"
+            "${{OMI_REPO}}/build/lib/{1}/libmi.dylib"
 
         ARM64_LIB="$( dirname $( dirname "${{file}}" ) )-arm64/lib/${{FILENAME}}"
         install_name_tool -change \\
             "${{ARM64_LIB}}" \\
             "@loader_path/${{FILENAME}}" \\
-            "${{OMI_REPO}}/PSWSMan/lib/{1}/libmi.dylib"
+            "${{OMI_REPO}}/build/lib/{1}/libmi.dylib"
     fi
 done'''.format(openssl_version, distribution)))
 
         script_steps.append(('Output linked information',
             '''echo "libpsrpclient links"
-otool -L -arch all "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib"
+otool -L -arch all "${{OMI_REPO}}/build/lib/{0}/libpsrpclient.dylib"
 
 echo "libmi links"
-otool -L -arch all "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.dylib"
+otool -L -arch all "${{OMI_REPO}}/build/lib/{0}/libmi.dylib"
 
 echo "libmi architecture info"
-lipo -archs "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.dylib"
+lipo -archs "${{OMI_REPO}}/build/lib/{0}/libmi.dylib"
 
 echo "libpsrpclient architecture info"
-lipo -archs "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.dylib"
+lipo -archs "${{OMI_REPO}}/build/lib/{0}/libpsrpclient.dylib"
 '''.format(distribution)))
 
     else:
         script_steps.append(('Output linked information',
             '''echo "libpsrpclient links"
-ldd "${{OMI_REPO}}/PSWSMan/lib/{0}/libpsrpclient.so" || true
+ldd "${{OMI_REPO}}/build/lib/{0}/libpsrpclient.so" || true
 
 echo "libmi links"
-ldd "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.so" || true
+ldd "${{OMI_REPO}}/build/lib/{0}/libmi.so" || true
 '''.format(distribution)))
 
     build_script = build_bash_script(script_steps)
@@ -278,13 +369,13 @@ ldd "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.so" || true
         print(build_script)
 
     else:
+        libmi_path = os.path.join(OMI_REPO, 'build', 'lib')
+        if not os.path.exists(libmi_path):
+            os.makedirs(libmi_path)
+
         with tempfile.NamedTemporaryFile(dir=OMI_REPO, prefix='build-', suffix='-%s.sh' % distribution) as temp_fd:
             temp_fd.write(build_script.encode('utf-8'))
             temp_fd.flush()
-
-            configure_dir = os.path.join(OMI_REPO, 'Unix')
-            build_dir = os.path.join(configure_dir, output_dirname)
-
             env_vars = {}
 
             # Get the omi.version from the PSWSMan module manifest
@@ -310,8 +401,17 @@ ldd "${{OMI_REPO}}/PSWSMan/lib/{0}/libmi.so" || true
                 env_vars.update(os.environ.copy())
                 subprocess.check_call(['bash', temp_fd.name], cwd=OMI_REPO, env=env_vars)
 
-            libmi_path = os.path.join(OMI_REPO, 'PSWSMan', 'lib', distribution)
-            print("Successfully built\n\t{0}/libmi.{1}\n\t{0}/libpsrpclient.{1}".format(libmi_path, library_extension))
+            print("Successfully built\n\t{0}/libmi.{1}\n\t{0}/libpsrpclient.{1}".format(
+                os.path.join(libmi_path, distribution), library_extension))
+
+
+def main():
+    """Main program body."""
+    args = parse_args()
+    if args.distribution == "module":
+        build_module(args)
+    else:
+        build_omi(args)
 
 
 def parse_args():
@@ -322,7 +422,8 @@ def parse_args():
                         metavar='distribution',
                         nargs='?',
                         default=None,
-                        help='The distribution to build.').completer = complete_distribution
+                        help='The distribution to build, use module to build the PSWSMan module.'
+    ).completer = complete_distribution
 
     parser.add_argument('--debug',
                         dest='debug',
@@ -338,7 +439,7 @@ def parse_args():
     parser.add_argument('--skip-clear',
                         dest='skip_clear',
                         action='store_true',
-                        help="Don't clear any existing build files for the distribution.")
+                        help="Don't clear any existing build files for the distribution/module.")
 
     parser.add_argument('--skip-deps',
                         dest='skip_deps',

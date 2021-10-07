@@ -15,7 +15,7 @@ It will do the following
 + Set up the build folders for both `mi` and `psrpclient` as required
 + Set the configure and build arguments based on what is required
 + Build the libraries
-+ Copy the built libraries into `PSWSMan/lib/{distribution}`
++ Copy the built libraries into `build/lib/{distribution}`
 
 To use `build.py` run `./build.py {distribution}`.
 There are some other arguments you can supply to alter the behaviour of the build script like:
@@ -27,7 +27,7 @@ There are some other arguments you can supply to alter the behaviour of the buil
 + `--skip-clear`: Don't clear the `Unix/build-{distribution}` folder before building to speed up compilation after making changes to the code
 + `--skip-deps`: Don't install the required build dependencies
 
-Once the build step is completed it will generate the compiled libraries at `PSWSMan/lib/{distribution}/*`.
+Once the build step is completed it will generate the compiled libraries at `build/lib/{distribution}/*`.
 
 The aim is to support the same distributions that PowerShell supports through universal builds that work across a wide range of distributions.
 There are currently the following universal builds that are distributed with `PSWSMan`:
@@ -71,7 +71,7 @@ There are 2 libraries that are built and used by PowerShell:
 + `mi`
 + `psrpclient`
 
-To build `mi manually you can run:
+To build `mi` manually you can run:
 
 ```bash
 cd Unix

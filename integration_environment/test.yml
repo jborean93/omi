@@ -48,7 +48,7 @@
   - name: kick off integration tests
     command: ~/omi/test.py {{ item | trim }} --docker
     loop: '{{ selected_distributions }}'
-    async: 600
+    async: 2400
     poll: 0
     register: async_job
 

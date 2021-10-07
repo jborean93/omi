@@ -121,7 +121,7 @@
       # few times before trying again.
       $address = $null
       while ($true) {
-          $address = Get-NetAdapter -InterfaceDescription $adapterName | Get-NetIPAddress | Where-Object AddressFamily -eq IPv4  
+          $address = Get-NetAdapter -InterfaceDescription $adapterName | Get-NetIPAddress | Where-Object AddressFamily -eq IPv4
           if (-not $address.IPAddress) {
               Start-Sleep -Seconds 1
           } else {
@@ -375,19 +375,23 @@
     tags:
     - build_artifacts
     block:
-    - name: get download info for Azure DevOps build artifacts
+    - name: ensure build directory exists
+      file:
+        path: ~/omi/build
+        state: directory
+      become: no
+
+    - name: get download URL for the Azure DevOps nupkg artifact
       uri:
-        url: https://dev.azure.com/jborean93/jborean93/_apis/build/builds/{{ build_id }}/artifacts?api-version=4.1
+        url: https://dev.azure.com/jborean93/jborean93/_apis/build/builds/{{ build_id }}/artifacts/PSWSMan?api-version=4.1
         return_content: yes
       register: azure_artifacts
 
-    - name: downloading azure DevOps build artifacts
+    - name: downloading Azure DevOps nupkg artifact
       unarchive:
-        src: '{{ azure_artifacts.json.value[item | int].resource.downloadUrl }}'
-        dest: ~/omi/PSWSMan/lib
+        src: '{{ azure_artifacts.json.resource.downloadUrl }}'
+        dest: ~/omi/build
+        extra_opts:
+        - -j  # Ignores root directory and just extracts the nupkg inside it
         remote_src: yes
       become: no
-      when: azure_artifacts.json.value[item | int].name != 'PSWSMan'
-      with_sequence: start=0 end={{ (azure_artifacts.json.count | int) - 1 }}
-      loop_control:
-        label: '{{ azure_artifacts.json.value[item | int].name }}'

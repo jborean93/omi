@@ -68,16 +68,22 @@ Install-Module -Name PSWSMan
 sudo pwsh -Command 'Install-WSMan'
 ```
 
-If you wish to build your own changes or are using a distribution that isn't set up then you can manually install it using the source module or by copying the files.
-Make sure to run this with `root` as it needs write access to the PowerShell directory.
+If you wish to build your own changes you can manually build the module.
+Make sure to run this step after you've manually built OMI into the `build/lib` directory.
+
+```bash
+./build.py module
+```
+
+Once built you can import the module and install the WSMan components.
 
 ```powershell
 # Import PSWSMan from the repo source, that will source the libs from PSWSMan/lib/{distribution} of the repo
-Import-Module -Name ./PSWSMan
+Import-Module -Name ./build/PSWSMan
 Install-WSMan
 ```
 
-You can also manually install the libraries by copying the files `PSWSMan/lib/{distribution}/lib*` into the PowerShell directory.
+You can also manually install the libraries by copying the files `build/lib/{distribution}/lib*` into the PowerShell directory.
 The location of the PowerShell directory differs based on each distribution or how it was installed.
 An easy way to determine this directory is by running `dirname "$( readlink "$( which pwsh )" )"`
 
@@ -210,10 +216,6 @@ This allows me to easily merge any upstream changes and compare what has been ed
 See [Can Fix](#cant-fix) for known bugs that can be fixed.
 Otherwise other features/changes that are in the backlog are:
 
-+ Continue to add more distributions for building/testing
-  + OpenSUSE 42.3
-  + OpenSUSE Leap 15
 + Add a way to specify the `omicli.conf` file through an env var instead of the hardcoded location
 + Try and find a better way to enable NTLM auth for macOS, current implementation is a bit of hack
 + Add a force NTLM auth to be used in conjunction with `-Authentication Negotiate`
-+ Look at creating a "universal" build that OMI does in their normal releases

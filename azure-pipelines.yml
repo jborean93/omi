@@ -8,7 +8,7 @@ trigger:
     - README.md
 
 stages:
-- stage: Build
+- stage: OMI
   jobs:
 
   - job: Linux
@@ -35,7 +35,7 @@ stages:
 
     - task: PublishPipelineArtifact@1
       inputs:
-        targetPath: PSWSMan/lib/$(distribution)/
+        targetPath: build/lib/$(distribution)/
         artifactName: $(distribution)
       displayName: Publish artifacts
 
@@ -58,9 +58,46 @@ stages:
 
     - task: PublishPipelineArtifact@1
       inputs:
-        targetPath: PSWSMan/lib/$(distribution)/
+        targetPath: build/lib/$(distribution)/
         artifactName: $(distribution)
       displayName: Publish artifacts
+
+- stage: Module
+  jobs:
+  - job: Linux
+    pool:
+      vmImage: ubuntu-18.04
+
+    steps:
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        source: current
+        path: build/lib
+
+    - script: sed -i '/Prerelease =/d' PSWSMan/module/PSWSMan.psd1
+      displayName: Remove prerelease data in psd1 manifest for final release
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['Build.Reason'], 'IndividualCI'),
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+          startsWith(variables['Build.SourceVersionMessage'], 'release ')
+        )
+
+    - script: ./build.py module
+      displayName: Build PSWSMan module
+
+    - script: |
+        NUPKG_PATH="$( ls build/PSWSMan*.nupkg )"
+        echo "Found PSWSman nupkg at '${NUPKG_PATH}'"
+        echo "##vso[task.setvariable variable=NupkgPath]${NUPKG_PATH}"
+      displayName: Get full path to published nupkg
+
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: $(NupkgPath)
+        artifactName: PSWSMan
+      displayName: Publish PSWSMan nupkg
 
 - stage: Test
   jobs:
@@ -97,14 +134,10 @@ stages:
     - task: DownloadPipelineArtifact@2
       inputs:
         source: current
-        path: PSWSMan/lib
+        artifact: PSWSMan
+        path: build
 
-    - pwsh: |
-        $version = (Import-Module -Name ./PSWSMan -PassThru).Version.ToString(3) + ".$(Build.BuildId)"
-        Write-Host "##vso[task.setvariable variable=BuildVersion]${version}"
-      displayName: Get module version
-
-    - script: ./test.py $(distribution) --docker --verify-version $(BuildVersion)
+    - script: ./test.py $(distribution) --docker --verify-version
       displayName: Check compiled libraries are loadable and are set to the correct version
 
   - job: macOS
@@ -121,14 +154,10 @@ stages:
     - task: DownloadPipelineArtifact@2
       inputs:
         source: current
-        path: PSWSMan/lib
+        artifact: PSWSMan
+        path: build
 
-    - pwsh: |
-        $version = (Import-Module -Name ./PSWSMan -PassThru).Version.ToString(3) + ".$(Build.BuildId)"
-        Write-Host "##vso[task.setvariable variable=BuildVersion]${version}"
-      displayName: Get module version
-
-    - script: ./test.py $(distribution) --verify-version $(BuildVersion)
+    - script: ./test.py $(distribution) --verify-version
       displayName: Check compiled libraries are loadable and are set to the correct version
 
 - stage: Publish
@@ -147,32 +176,17 @@ stages:
     - task: DownloadPipelineArtifact@2
       inputs:
         source: current
-        path: PSWSMan/lib
-
-    - script: sed -i '/Prerelease =/d' PSWSMan/PSWSMan.psd1
-      displayName: Remove prerelease data in psd1 manifest for final release
-      condition: >-
-        and(
-          succeeded(),
-          eq(variables['Build.Reason'], 'IndividualCI'),
-          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
-          startsWith(variables['Build.SourceVersionMessage'], 'release ')
-        )
+        path: build/lib
 
     - script: ./release.py --output-dir "$(Build.ArtifactStagingDirectory)"
       displayName: Create artifacts to publish for GitHub and PowerShell Gallery
 
-    - script: |
-        NUPKG_PATH="$( ls $(Build.ArtifactStagingDirectory)/PSWSMan*.nupkg )"
-        echo "Found PSWSman nupkg at '${NUPKG_PATH}'"
-        echo "##vso[task.setvariable variable=NupkgPath]${NUPKG_PATH}"
-      displayName: Get full path to published nupkg
-
-    - task: PublishPipelineArtifact@1
+    - task: CopyFiles@2
       inputs:
-        targetPath: $(NupkgPath)
-        artifactName: PSWSMan
-      displayName: Publish PSWSMan nupkg
+        sourceFolder: build/lib/PSWSMan
+        contents: '*.nupkg'
+        targetFolder: '$(Build.ArtifactStagingDirectory)'
+      displayName: Move PSWSMan nupkg to staging directory
 
     - task: NuGetCommand@2
       inputs:

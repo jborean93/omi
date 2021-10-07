@@ -8,14 +8,10 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import argparse
-import base64
 import os
 import os.path
-import re
 import shutil
-import subprocess
 import tarfile
-import tempfile
 
 from utils import (
     argcomplete,
@@ -29,9 +25,10 @@ def main():
     args = parse_args()
 
     version = get_version()
+    version_str = '%s.%s.%s' % version
 
     if args.print_tag:
-        print("v%s.%s.%s-pwsh" % (version.major, version.minor, version.patch))
+        print("v%s-pwsh" % version_str)
 
     elif args.output_dir:
         if os.path.exists(args.output_dir):
@@ -39,9 +36,12 @@ def main():
         os.makedirs(args.output_dir)
 
         # Create a tar.gz for each distribution libs for the GitHub release
-        lib_path = os.path.join(OMI_REPO, 'PSWSMan', 'lib')
+        lib_path = os.path.join(OMI_REPO, 'build', 'lib')
         for distribution in os.listdir(lib_path):
             artifact_dir = os.path.join(lib_path, distribution)
+            if distribution == "PSWSMan" or not os.path.isdir(artifact_dir):
+                continue
+
             artifact_tar = os.path.join(args.output_dir, distribution) + '.tar.gz'
 
             if distribution.startswith('.') or not os.path.isdir(artifact_dir):
@@ -54,39 +54,6 @@ def main():
                         continue
                     print("\tAdding '%s' to tar" % lib_name)
                     tar.add(os.path.join(artifact_dir, lib_name), arcname=lib_name)
-
-        # Create the PSWSMan nupkg
-        pwsh_command = '''$ErrorActionPreference = 'Stop'
-
-$outputDir = '%s'
-$repoParams = @{
-  Name = 'PSWSManRepo'
-  SourceLocation = $outputDir
-  PublishLocation = $outputDir
-  InstallationPolicy = 'Trusted'
-}
-if (Get-PSRepository -Name $repoParams.Name -ErrorAction SilentlyContinue) {
-    Unregister-PSRepository -Name $repoParams.Name
-}
-Register-PSRepository @repoParams
-
-try {
-    Publish-Module -Path ./PSWSMan -Repository $repoParams.Name
-} finally {
-    Unregister-PSRepository -Name $repoParams.Name
-}
-''' % args.output_dir
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1') as temp_fd:
-            temp_fd.write(pwsh_command)
-            temp_fd.flush()
-
-            print("Creating PSWSMan nupkg")
-            subprocess.check_call(['pwsh', '-File', temp_fd.name], cwd=OMI_REPO)
-
-        nupkg_name = None
-        for name in os.listdir(args.output_dir):
-            if name.endswith('.nupkg'):
-                print("Published PSWSMan to '%s'" % os.path.join(args.output_dir, name))
 
 
 def parse_args():

@@ -19,8 +19,8 @@ ansible-playbook main.yml -vv -e build_id=123
 ```
 
 The `build_id` variable can be set to any build number from [Azure DevOps jborean93.omi](https://dev.azure.com/jborean93/jborean93/_build?definitionId=6&_a=summary).
-When set, the playbook will download the relevant libraries for each distribution and place them into `PSWSMan/lib/{distribution}`.
-If you don't specify `build_id` it will just copy whatever libraries are already located in the repo to the Debian host.
+When set, the playbook will download the PSWSMan nupkg from the run and place it into `build`.
+If you don't specify `build_id` it will just copy whatever files that are located in the localhost to the Debian host.
 
 You can also specify the following `--tags` to only run a specific component of the `main.yml` playbook:
 

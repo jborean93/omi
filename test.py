@@ -19,6 +19,7 @@ from utils import (
     build_package_repo_command,
     complete_distribution,
     docker_run,
+    get_version,
     load_distribution_config,
     OMI_REPO,
     select_distribution,
@@ -52,9 +53,34 @@ def main():
 
         script_steps.append(('Installing test dependency packages', dep_script))
 
+        install_pswsman = '''cat > /tmp/install-pswsman.ps1 << EOL
+\$ErrorActionPreference = 'Stop'
+
+\$repoParams = @{
+  Name = 'PSWSManRepo'
+  PublishLocation = './build'
+  SourceLocation = './build'
+  InstallationPolicy = 'Trusted'
+}
+if (Get-PSRepository -Name \$repoParams.Name -ErrorAction SilentlyContinue) {
+    Unregister-PSRepository -Name \$repoParams.Name
+}
+Register-PSRepository @repoParams
+
+try {
+    Install-Module -Name PSWSMan -Repository \$repoParams.Name -Scope CurrentUser
+} finally {
+    Unregister-PSRepository -Name \$repoParams.Name
+}
+EOL
+
+pwsh -NoProfile -NoLogo -File /tmp/install-pswsman.ps1
+'''
+        script_steps.append(('Installing PSWSMan module', install_pswsman))
+
         cert_path = os.path.join('integration_environment', 'cert_setup', 'ca.pem')
         if os.path.exists(os.path.join(OMI_REPO, cert_path)):
-            cert_cmd = "%spwsh -Command 'Import-Module ./PSWSMan; Register-TrustedCertificate -Path %s -Verbose'" \
+            cert_cmd = "%spwsh -Command 'Register-TrustedCertificate -Path %s -Verbose'" \
                 % (sudo_prefix, cert_path)
             script_steps.append(('Adding CA chain to system trust store', cert_cmd))
 
@@ -70,7 +96,7 @@ pwsh -NoProfile -NoLogo -File /tmp/pwsh-requirements.ps1'''
         script_steps.append(('Installing Pester 5+ and other PowerShell deps', pwsh_deps))
 
     install_script = '''PWSHDIR="$( dirname "$( readlink "$( which pwsh )" )" )"
-%spwsh -Command 'Import-Module ./PSWSMan; Install-WSMan -Verbose\'''' % sudo_prefix
+%spwsh -Command 'Install-WSMan -Verbose\'''' % sudo_prefix
     script_steps.append(('Copying lib artifacts to the PowerShell directory', install_script))
 
     pester_script = '''cat > /tmp/pwsh-test.ps1 << EOL
@@ -90,7 +116,7 @@ echo "%s" > /tmp/distro.txt''' % distribution
 
     script_steps.append(('Getting PowerShell version', 'pwsh -Command \$PSVersionTable'))
     script_steps.append(('Getting libmi version',
-        "pwsh -Command 'Import-Module ./PSWSMan; Get-WSManVersion'"))
+        "pwsh -Command 'Get-WSManVersion'"))
 
     if distribution.startswith('macOS'):
         script_steps.append(('Output libpsrpclient libraries', 'otool -L -arch all "${PWSHDIR}/libpsrpclient.dylib"'))
@@ -104,11 +130,14 @@ echo "%s" > /tmp/distro.txt''' % distribution
         script_steps.append(('Opening interactive shell', '/bin/bash'))
 
     elif args.verify_version:
-        script_steps.append(('Verify libraries are loaded and match %s' % args.verify_version,
+        build_id = os.environ.get('BUILD_BUILDID', '0')  # Azure DevOps version
+        verify_version = "%s.%s.%s.%s" % (get_version() + (build_id,))
+
+        script_steps.append(('Verify libraries are loaded and match %s' % verify_version,
         '''cat > /tmp/version-test.ps1 << EOL
 \$ErrorActionPreference = 'Stop'
 \$ProgressPreference = 'SilentlyContinue'
-Import-Module -Name ./PSWSMan
+Import-Module -Name PSWSMan
 
 \$expectedVersion = [Version]'%s'
 \$actualVersions = Get-WSManVersion
@@ -124,7 +153,7 @@ if (\$actualVersions.PSRP -ne \$expectedVersion) {
 "SUCCESS: Versions are good"
 EOL
 
-pwsh -NoProfile -NoLogo -File /tmp/version-test.ps1''' % args.verify_version))
+pwsh -NoProfile -NoLogo -File /tmp/version-test.ps1''' % verify_version))
 
     else:
         script_steps.append(('Running PowerShell test', 'pwsh -NoProfile -NoLogo -File /tmp/pwsh-test.ps1'))
@@ -170,8 +199,8 @@ def parse_args():
 
     parser.add_argument('--verify-version',
                         dest='verify_version',
-                        action='store',
-                        help='Will only test that the library can be loaded and the version matches this value.')
+                        action='store_true',
+                        help='Will only test that the library can be loaded and the version is the value expected.')
 
     run_group = parser.add_mutually_exclusive_group()
     run_group.add_argument('--docker',
