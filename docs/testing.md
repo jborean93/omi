@@ -7,26 +7,21 @@ This test environment contains 2 hosts:
 + DC01 - Windows domain controller
 + DEBIAN10 - A Linux test host with Docker and the local `omi` repo copied to `~/omi`
 
+Before running the playbook stage you will need to download the GitHub Actions PSWSMan artifact from a run and place it in the same directory as `main.yml`.
+
 To create this environment, run the following:
 
 ```bash
 cd integration_environment
 vagrant up
 ansible-playbook main.yml -vv
-
-# To setup the host with pre-built variable from an Azure DevOps CI run, add '-e build_id=<build id>' for that run
-ansible-playbook main.yml -vv -e build_id=123
 ```
-
-The `build_id` variable can be set to any build number from [Azure DevOps jborean93.omi](https://dev.azure.com/jborean93/jborean93/_build?definitionId=6&_a=summary).
-When set, the playbook will download the PSWSMan nupkg from the run and place it into `build`.
-If you don't specify `build_id` it will just copy whatever files that are located in the localhost to the Debian host.
 
 You can also specify the following `--tags` to only run a specific component of the `main.yml` playbook:
 
 + `windows`: Setup the Windows domain controller
 + `linux`: Setup the Debian host
-+ `build_artifacts`: Run the Azure DevOps libmi download tasks, `-e build_id=` must also be set
++ `build_artifacts`: Copy across the GitHub Actions artifact for testing
 
 The domain information and credentials are dependent on the values in [integration_environment/inventory.yml](../integration_environment/inventory.yml).
 It defaults to a domain called `omi.test` with the test user `omi@OMI.TEST` with the password `Password01`.

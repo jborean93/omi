@@ -1,6 +1,6 @@
 # Open Management Infrastructure - PowerShell Edition
 
-[![Build Status](https://dev.azure.com/jborean93/jborean93/_apis/build/status/jborean93.omi?branchName=main)](https://dev.azure.com/jborean93/jborean93/_build/latest?definitionId=6&branchName=main)
+[![Test workflow](https://github.com/jborean93/omi/actions/workflows/ci.yml/badge.svg)](https://github.com/jborean93/omi/actions/workflows/ci.yml)
 [![PowerShell Gallery](https://img.shields.io/powershellgallery/dt/PSWSMan.svg)](https://www.powershellgallery.com/packages/PSWSMan)
 
 This is a fork of Microsoft [OMI](https://github.com/microsoft/omi) repository.

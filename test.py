@@ -130,7 +130,7 @@ echo "%s" > /tmp/distro.txt''' % distribution
         script_steps.append(('Opening interactive shell', '/bin/bash'))
 
     elif args.verify_version:
-        build_id = os.environ.get('BUILD_BUILDID', '0')  # Azure DevOps version
+        build_id = os.environ.get('OMI_BUILDVERSION_BUILDNR', '0')
         verify_version = "%s.%s.%s.%s" % (get_version() + (build_id,))
 
         script_steps.append(('Verify libraries are loaded and match %s' % verify_version,

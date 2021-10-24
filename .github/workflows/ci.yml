@@ -1,0 +1,204 @@
+name: Test OMI
+on:
+  push:
+    branches:
+    - main
+    paths-ignore:
+    - CHANGELOG.md
+    - LICENSE
+    - README.md
+    - SECURITY.md
+
+  pull_request:
+    branches:
+    - main
+    paths-ignore:
+    - CHANGELOG.md
+    - LICENSE
+    - README.md
+    - SECURITY.md
+
+  release:
+    types:
+    - published
+
+  schedule:
+  - cron: 0 9 * * *
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  POWERSHELL_TELEMETRY_OPTOUT: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_NOLOGO: true
+
+jobs:
+  build-omi:
+    name: build omi
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - os: ubuntu-latest
+          distribution: glibc-1.0
+        - os: ubuntu-latest
+          distribution: glibc-1.1
+        - os: ubuntu-latest
+          distribution: glibc-3
+        - os: ubuntu-latest
+          distribution: musl-1.1
+        - os: ubuntu-latest
+          distribution: musl-3
+        - os: macOS-10.15
+          distribution: macOS-1.1
+        - os: macOS-10.15
+          distribution: macOS-3
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - uses: actions/setup-python@v2
+
+    - name: build
+      run: |
+        export OMI_BUILDVERSION_BUILDNR="${GITHUB_RUN_NUMBER}"
+
+        if [ "$(uname)" == "Darwin" ]; then
+          SDKROOT=macosx11.1 ./build.py ${{ matrix.distribution }}
+        else
+          ./build.py ${{ matrix.distribution }} --docker
+        fi
+
+    - name: Publish omi and psrpclient for ${{ matrix.distribution }}
+      uses: actions/upload-artifact@v2
+      with:
+        path: build/lib/${{ matrix.distribution }}/*
+        name: ${{ matrix.distribution }}
+
+  build-module:
+    name: build module
+    needs:
+    - build-omi
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - uses: actions/setup-python@v2
+
+    - name: Download built libs
+      uses: actions/download-artifact@v2
+      with:
+        path: build/lib
+
+    - name: Delete pre-release tag for final release
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: sed -i '/Prerelease =/d' PSWSMan/module/PSWSMan.psd1
+
+    - name: Build module
+      run: ./build.py module
+
+    - name: Publish PSWSMan nupkg
+      uses: actions/upload-artifact@v2
+      with:
+        path: build/PSWSMan*.nupkg
+        name: PSWSMan
+
+  test:
+    name: test
+    needs:
+    - build-module
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - os: ubuntu-latest
+          distribution: centos7
+        - os: ubuntu-latest
+          distribution: centos8
+        - os: ubuntu-latest
+          distribution: debian9
+        - os: ubuntu-latest
+          distribution: debian10
+        - os: ubuntu-latest
+          distribution: fedora32
+        - os: ubuntu-latest
+          distribution: fedora33
+        - os: ubuntu-latest
+          distribution: ubuntu16.04
+        - os: ubuntu-latest
+          distribution: ubuntu18.04
+        - os: ubuntu-latest
+          distribution: ubuntu20.04
+        - os: ubuntu-latest
+          distribution: archlinux
+        - os: ubuntu-latest
+          distribution: alpine3
+        - os: macOS-latest
+          distribution: macOS-1.1
+        - os: macOS-latest
+          distribution: macOS-3
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - uses: actions/setup-python@v2
+
+    - name: Download PSWSMan module
+      uses: actions/download-artifact@v2
+      with:
+        name: PSWSMan
+        path: build
+
+    - name: Test module
+      run: |
+        export OMI_BUILDVERSION_BUILDNR="${GITHUB_RUN_NUMBER}"
+
+        if [ "$(uname)" == "Darwin" ]; then
+          ./test.py ${{ matrix.distribution }} --verify-version
+        else
+          ./test.py ${{ matrix.distribution }} --docker --verify-version
+        fi
+
+  publish:
+    name: publish
+    needs:
+    - test
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - uses: actions/setup-python@v2
+
+    - name: Download CI artifacts
+      uses: actions/download-artifact@v2
+      with:
+        path: build/lib
+
+    - name: Prepare artifacts for publishing
+      run: ./release.py --output-dir publish
+
+    - name: Upload release artifacts
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          publish/*
+          build/lib/PSWSMan/PSWSMan*.nupk
+
+    # - name: Publish to Gallery
+    #   if: startsWith(github.ref, 'refs/tags/v')
+    #   run: >-
+    #     dotnet nuget push "*.nupkg"
+    #     --api-key "${PSGALLERY_TOKEN}"
+    #     --source "https://www.powershellgallery.com/api/v2/package"
+    #     --no-symbols true
+    #   env:
+    #     PSGALLERY_TOKEN: ${{ secrets.PSGALLERY_TOKEN }}

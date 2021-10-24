@@ -61,7 +61,7 @@ def build_package_command(package_manager, packages):  # type: (str, List[str]) 
         'apt': 'apt-get -q update\nDEBIAN_FRONTEND=noninteractive apt-get -q install -y',
         'dnf': 'dnf install -y -q',
         'brew': 'brew install',
-        'pacman': 'pacman -Sy --noconfirm --overwrite \'*\'',
+        'pacman': 'pacman -Syu --noconfirm --overwrite \'*\'',
         'yum': 'yum install -y -q',
     }
 
@@ -92,7 +92,9 @@ oldpath="$( pwd )"
 cd /tmp/gss-ntlmssp
 autoreconf -f -i
 ./configure \\
+    --disable-dependency-tracking \\
     --with-manpages=no \\
+    --with-wbclient=no \\
     --disable-nls
 make && make install
 cd "${oldpath}"
@@ -147,7 +149,11 @@ ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh'''
 git clone https://github.com/gssapi/gss-ntlmssp.git /tmp/gss-ntlmssp
 pushd /tmp/gss-ntlmssp
 autoreconf -f -i
-./configure
+./configure \\
+    --disable-dependency-tracking \\
+    --with-manpages=no \\
+    --with-wbclient=no \\
+    --disable-nls
 make && make install
 popd
 rm -rf /tmp/gss-ntlmssp

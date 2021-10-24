@@ -1,9 +1,24 @@
 # Setups up a domain controller and test Debian host for testing distros in a docker container
-# Can be run with `-e build_id={num}' to download the prebuilt libmi.so from a CI run
 # Supports the following tags:
 #   windows: Sets up the domain controller only
 #   linux: Sets up the Debian host
-#   build_artifacts: Downloads the libmi from Azure DevOps run (requires '-e build_id' to be set)
+#   build_artifacts: Downloads the libmi from GitHub Actions run
+
+- name: check GHA artifact is downloaded
+  hosts: localhost
+  gather_facts: no
+  tasks:
+  - name: stat GHA artifact
+    stat:
+      path: '{{ playbook_dir }}/PSWSMan.zip'
+    register: stat_info
+
+  - assert:
+      that:
+      - stat_info.stat.exists
+      msg: >-
+        Please download PSWSMan.zip from GitHub Actions run that contains the PSWSMan nupkg
+        and place it adjacent to the main.yml playbook.
 
 - name: setup domain controller
   hosts: windows
@@ -370,28 +385,18 @@
       dest: ~/omi/krb5.conf
     become: no
 
-  - name: download Azure DevOps build artifacts
-    when: build_id is defined
+  - name: ensure build directory exists
+    file:
+      path: ~/omi/build
+      state: directory
+    become: no
     tags:
     - build_artifacts
-    block:
-    - name: ensure build directory exists
-      file:
-        path: ~/omi/build
-        state: directory
-      become: no
 
-    - name: get download URL for the Azure DevOps nupkg artifact
-      uri:
-        url: https://dev.azure.com/jborean93/jborean93/_apis/build/builds/{{ build_id }}/artifacts/PSWSMan?api-version=4.1
-        return_content: yes
-      register: azure_artifacts
-
-    - name: downloading Azure DevOps nupkg artifact
-      unarchive:
-        src: '{{ azure_artifacts.json.resource.downloadUrl }}'
-        dest: ~/omi/build
-        extra_opts:
-        - -j  # Ignores root directory and just extracts the nupkg inside it
-        remote_src: yes
-      become: no
+  - name: extract GitHub Actions PSWSMan artifact
+    unarchive:
+      src: PSWSMan.zip
+      dest: ~/omi/build
+    become: no
+    tags:
+    - build_artifacts

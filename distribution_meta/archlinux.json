@@ -18,10 +18,7 @@
         "aur:gss-ntlmssp",
         "aur:powershell-bin",
         "ca-certificates-utils",
-        "docbook-xsl",
-        "doxygen",
         "krb5",
-        "libwbclient",
         "openssl",
         "which"
     ],
