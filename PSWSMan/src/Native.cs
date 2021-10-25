@@ -1,8 +1,5 @@
 using System;
-using System.Management.Automation;
-using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Runtime.Loader;
 
 namespace PSWSMan
 {

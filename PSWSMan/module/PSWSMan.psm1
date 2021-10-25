@@ -47,83 +47,7 @@ Function exec {
         $Arguments
     )
 
-    $psi = [Diagnostics.ProcessStartInfo]@{
-        FileName = $FilePath
-        Arguments = ($Arguments -join ' ')
-        RedirectStandardError = $true
-        RedirectStandardOutput = $true
-    }
-    $proc = [Diagnostics.Process]::Start($psi)
-
-    $stdout = [Text.StringBuilder]::new()
-    $stderr = [Text.StringBuilder]::new()
-    $eventParams = @{
-        InputObject = $proc
-        Action = {
-            if (-not [System.String]::IsNullOrEmpty($EventArgs.Data)) {
-                $Event.MessageData.AppendLine($EventArgs.Data)
-            }
-        }
-    }
-    $stdoutEvent = Register-ObjectEvent @eventParams -EventName 'OutputDataReceived' -MessageData $stdout
-    $stderrEvent = Register-ObjectEvent @eventParams -EventName 'ErrorDataReceived' -MessageData $stderr
-
-    $proc.BeginOutputReadLine()
-    $proc.BeginErrorReadLine()
-
-    $proc.WaitForExit()
-
-    Unregister-Event -SourceIdentifier $stdoutEvent.Name
-    Unregister-Event -SourceIdentifier $stderrEvent.Name
-
-
-    [PSCustomObject]@{
-        Stdout = $stdout.ToString()
-        Stderr = $stderr.ToString()
-        ExitCode = $proc.ExitCode
-    }
-}
-
-Function setenv {
-    <#
-    .SYNOPSIS
-    Wrapper calling setenv PInvoke method to set the process environment variables.
-    #>
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory=$true, Position=0)]
-        [String]
-        $Name,
-
-        [Parameter(Position=1)]
-        [AllowEmptyString()]
-        $Value
-    )
-
-    # We need to use the native setenv call as .NET keeps it's own register of env vars that are separate from the
-    # process block that native libraries like libmi sees. We still set the .NET env var to keep things in sync.
-    [PSWSMan.Native]::setenv($Name, $Value)
-    Set-Item -LiteralPath env:$Name -Value $Value
-}
-
-Function unsetenv {
-    <#
-    .SYNOPSIS
-    Wrapper calling unsetenv PInvoke method to unset the process environment variables.
-    #>
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory=$true, Position=0)]
-        [String]
-        $Name
-    )
-
-    # We need to use the native unsetenv call as .NET keeps it's own register of env vars that are separate from the
-    # process block that native libraries like libmi sees. We still unset the .NET env var to keep things in sync.
-    [PSWSMan.Native]::unsetenv($Name)
-    if (Test-Path -LiteralPath env:$Name) {
-        Remove-Item -LiteralPath env:$Name -Force
-    }
+    [PSWSMan.Process]::Exec($FIlePath, $Arguments)
 }
 
 Function Get-OpenSSLInfo {
@@ -471,178 +395,6 @@ Function Get-DistributionInfo {
     }
 
     [PSCustomObject]$info
-}
-
-Function Disable-WSManCertVerification {
-    <#
-    .SYNOPSIS
-    Disables certificate verification globally.
-
-    .DESCRIPTION
-    Disables certificate verification for any WSMan requests globally. This can be disabled for just the CA or CN
-    checks or for all checks. The absence of a switch does not enable those checks, it only disables the specific
-    check requested if it was not disabled already.
-
-    .PARAMETER CACheck
-    Disables the certificate authority (CA) checks, i.e. the certificate authority chain does not need to be trusted.
-
-    .PARAMETER CNCheck
-    Disables the common name (CN) checks, i.e. the hostname does not need to match the CN or SAN on the endpoint
-    certificate.
-
-    .PARAMETER All
-    Disables both the CA and CN checks.
-
-    .EXAMPLE Disable all cert verification checks
-    Disable-WSManCertVerification -All
-
-    .EXAMPLE Disable just the CA verification checks
-    Disable-WSManCertVerification -CACheck
-
-    .NOTES
-    These checks are set through environment vars which are scoped to a process and are not set to a specific
-    connection. Unless you've set the specific env vars yourself then cert verification is enabled by default.
-    #>
-    [CmdletBinding(DefaultParameterSetName='Individual')]
-    param (
-        [Parameter(ParameterSetName='Individual')]
-        [Switch]
-        $CACheck,
-
-        [Parameter(ParameterSetName='Individual')]
-        [Switch]
-        $CNCheck,
-
-        [Parameter(ParameterSetName='All')]
-        [Switch]
-        $All
-    )
-
-    if ($All) {
-        $CACheck = $true
-        $CNCheck = $true
-    }
-
-    if ($CACheck) {
-        setenv 'OMI_SKIP_CA_CHECK' '1'
-    }
-
-    if ($CNCheck) {
-        setenv 'OMI_SKIP_CN_CHECK' '1'
-    }
-}
-
-Function Enable-WSManCertVerification {
-    <#
-    .SYNOPSIS
-    Enables cert verification globally.
-
-    .DESCRIPTION
-    Enables certificate verification for any WSMan requests globally. This can be enabled for just the CA or CN checks
-    or for all checks. The absence of a switch does not disable those checksomi, it only enables the specific check
-    requested  if it was not enabled already.
-
-    .PARAMETER CACheck
-    Enable the certificate authority (CA) checks, i.e. the certificate authority chain is checked for the endpoint
-    certificate.
-
-    .PARAMETER CNCheck
-    Enable the common name (CN) checks, i.e. the hostname matches the CN or SAN on the endpoint certificate.
-
-    .PARAMETER All
-    Enables both the CA and CN checks.
-
-    .EXAMPLE Enable all cert verification checks
-    Enable-WSManCertVerification -All
-
-    .EXAMPLE Enable just the CA verification checks
-    Enable-WSManCertVerification -CACheck
-
-    .NOTES
-    These checks are set through environment vars which are scoped to a process and are not set to a specific
-    connection. Unless you've set the specific env vars yourself then cert verification is enabled by default.
-    #>
-    [CmdletBinding(DefaultParameterSetName='Individual')]
-    param (
-        [Parameter(ParameterSetName='Individual')]
-        [Switch]
-        $CACheck,
-
-        [Parameter(ParameterSetName='Individual')]
-        [Switch]
-        $CNCheck,
-
-        [Parameter(ParameterSetName='All')]
-        [Switch]
-        $All
-    )
-
-    if ($All) {
-        $CACheck = $true
-        $CNCheck = $true
-    }
-
-    if ($CACheck) {
-        unsetenv 'OMI_SKIP_CA_CHECK'
-    }
-
-    if ($CNCheck) {
-        unsetenv 'OMI_SKIP_CN_CHECK'
-    }
-}
-
-Function Get-WSManVersion {
-    <#
-    .SYNOPSIS
-    Gets the versions of the installed WSMan libraries.
-
-    .DESCRIPTION
-    Gets the versions of the libmi and libpsrpclient libraries that were specified at build time. This will only
-    output a valid version if the installed libraries are ones built and installed by PSWSMan.
-
-    .EXAMPLE
-    Get-WSManVersion
-
-    .OUTPUTS PSWSMan.Version
-    [PSCustomObject]@{
-        MI = [Version] The version of libmi
-        PSRP = [Version] The version of libpsrpclient
-    }
-    #>
-    [CmdletBinding()]
-    param ()
-
-    $nameMap = [Ordered]@{
-        MI = 'mi'
-        PSRP = 'psrpclient'
-    }
-
-    $versions = [Ordered]@{
-        PSTypeName = 'PSWSMan.Version'
-    }
-
-    foreach ($map in $nameMap.GetEnumerator()) {
-        $version = [PSWSMan.Native+PWSH_Version]::new()
-        try {
-            [PSWSMan.Native]::"$($map.Key)_Version_Info"($version)
-        }
-        catch [ArgumentNullException] {
-            # .NET raises ArgumentNullException if the library or it's deps could not be found.
-            $msg = "lib$($map.Value) could not be loaded, make sure it and its dependencies are available"
-            Write-Error -Message $msg -Category NotInstalled
-            $version = $null
-        }
-        catch [EntryPointNotFoundException] {
-            # The function isn't exported which means the loaded version isn't from our custom build
-            $msg = "Custom lib$($map.Value) has not been installed, have you restarted PowerShell after installing it?"
-            Write-Error -Message $msg -Category NotInstalled
-            $version = $null
-        }
-
-        $versions.$($map.Key) = [Version]$version
-    }
-
-    [PSCustomObject]$versions
 }
 
 Function Install-WSMan {
@@ -1012,11 +764,13 @@ Function Register-TrustedCertificate {
 
 $export = @{
     Function = @(
-        'Disable-WSManCertVerification',
-        'Enable-WSManCertVerification',
-        'Get-WSManVersion',
         'Install-WSMan',
         'Register-TrustedCertificate'
+    )
+    Cmdlet = (
+        'Disable-WSManCertVerification',
+        'Enable-WSManCertVerification',
+        'Get-WSManVersion'
     )
 }
 Export-ModuleMember @export

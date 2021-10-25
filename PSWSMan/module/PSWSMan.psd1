@@ -7,11 +7,12 @@
     Description = "Module to install and manage the forked WSMan client libraries for Linux and macOS.`nSee https://github.com/jborean93/omi for more details."
     PowerShellVersion = '7.0'
     CompatiblePSEditions = 'Core'
-    CmdletsToExport = @()
-    FunctionsToExport = @(
+    CmdletsToExport = @(
         'Disable-WSManCertVerification',
         'Enable-WSManCertVerification',
-        'Get-WSManVersion',
+        'Get-WSManVersion'
+    )
+    FunctionsToExport = @(
         'Install-WSMan',
         'Register-TrustedCertificate'
     )
