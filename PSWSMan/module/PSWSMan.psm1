@@ -398,24 +398,6 @@ Function Get-DistributionInfo {
 }
 
 Function Install-WSMan {
-    <#
-    .SYNOPSIS
-    Install the patched WSMan libs.
-
-    .DESCRIPTION
-    Install the patched WSMan libs for the current distribution.
-
-    .PARAMETER Distribution
-    Deprecated and no longer used.
-
-    .EXAMPLE
-    # Need to run as root
-    sudo pwsh -Command 'Install-WSMan'
-
-    .NOTES
-    Once updated, PowerShell must be restarted for the library to be usable. This is a limitation of how the libraries
-    are loaded in a process. The function will warn if one of the libraries has been changed and a restart is required.
-    #>
     [CmdletBinding(SupportsShouldProcess=$true)]
     param (
         [String]
@@ -505,54 +487,10 @@ Function Install-WSMan {
 }
 
 Function Register-TrustedCertificate {
-    <#
-    .SYNOPSIS
-    Registers a certificate into the system's trusted store.
-
-    .DESCRIPTION
-    Registers a certificate, or a chain or certificates, into the trusted store for the current Linux distribution.
-
-    .PARAMETER Name
-    The name of the certificate file to use when placing it into the trusted store directory. If not set then the
-    value 'PSWSMan-(sha256 hash of certs)' will be used.
-
-    .PARAMETER Path
-    Specifies the path of a certificate to register. Wildcard characters are permitted.
-
-    .PARAMETER LiteralPath
-    Specifies a path to one or more locations of certificates to register. The value of 'LiteralPath' is used exactly
-    as it is typed. No characters are interpreted as wildcards.
-
-    .PARAMETER Certificate
-    The raw X509Certificate2 or X509Certificate2Collection object to register.
-
-    .EXAMPLE Register multiple PEMs using a wildcard
-    Register-TrustedCertificate -Path /tmp/*.pem
-
-    .EXAMPLE Register 'my*host.pem' using a literal path
-    Register-TrustedCertificate -LiteralPath 'my*host.pem'
-
-    .EXAMPLE Load your own certificate chain and register as one chain
-    $certs = [Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
-    $certs.Add([Security.Cryptography.X509Certificates.X509Certificate2]::new('/tmp/ca1.pem'))
-    $certs.Add([Security.Cryptography.X509Certificates.X509Certificate2]::new('/tmp/ca2.pem'))
-
-    Register-TrustedCertificate -Name MyDomainChains -Certificate $certs
-
-    .EXAMPLE Register a certificate from a PEM encoded file as a normal user
-    sudo pwsh -Command { Register-TrustedCertificate -Path /tmp/my_chain.pem }
-
-    .NOTES
-    This function needs to place files into trusted directories which typically require root access. This function
-    needs to be running as root for it to succeed.
-    #>
     [CmdletBinding(SupportsShouldProcess=$true, DefaultParameterSetName='Path')]
     param (
         [String]
         $Name,
-
-        [Switch]
-        $Sudo,
 
         [Parameter(Mandatory=$true, ParameterSetName='Path', ValueFromPipeline=$true,
             ValueFromPipelineByPropertyName=$true)]

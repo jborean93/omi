@@ -125,6 +125,7 @@ def build_module(args):
     framework = 'netcoreapp3.1'
     version = "%s.%s.%s" % get_version()
 
+    doc_path = os.path.join(OMI_REPO, 'PSWSMan', 'docs')
     module_path = os.path.join(OMI_REPO, 'PSWSMan', 'module')
     publish_path = os.path.join(OMI_REPO, 'PSWSMan', 'src', 'bin', configuration, framework, 'publish')
     build_path = os.path.join(OMI_REPO, 'build')
@@ -162,8 +163,20 @@ def build_module(args):
     copytree(publish_path, bin_path)
     copytree(lib_path, bin_path)
 
-    # Create the PSWSMan nupkg
+    # Create the docs and PSWSMan nupkg
     pwsh_command = '''$ErrorActionPreference = 'Stop'
+
+if (-not (Import-Module -Name platyPS -ErrorAction SilentlyContinue)) {
+    Install-Module -Name platyPS -Force -Scope CurrentUser
+}
+
+$docSourceDir = '%s'
+$releaseDir = '%s'
+$helpParams = @{
+    Path = [IO.Path]::Combine($docSourceDir, 'en-US')
+    OutputPath = [IO.Path]::Combine($releaseDir, 'en-US')
+}
+New-ExternalHelp @helpParams | Out-Null
 
 $outputDir = '%s'
 $repoParams = @{
@@ -182,7 +195,7 @@ try {
 } finally {
     Unregister-PSRepository -Name $repoParams.Name
 }
-''' % build_path
+''' % (doc_path, release_path, build_path)
     with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1') as temp_fd:
         temp_fd.write(pwsh_command)
         temp_fd.flush()
