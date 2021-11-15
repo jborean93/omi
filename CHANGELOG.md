@@ -3,6 +3,10 @@
 This is the changelog for this fork of OMI.
 It documents the changes in each of the tagged releases
 
+## 2.3.1 - TBD
+
++ Fix Kerberos auth with username but no password set
+
 ## 2.3.0 - 2021-11-12
 
 + Added universal build for macOS to work with both x86_64 and arm64 processes

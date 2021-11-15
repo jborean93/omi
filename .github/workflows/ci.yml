@@ -124,9 +124,11 @@ jobs:
         - os: ubuntu-latest
           distribution: debian10
         - os: ubuntu-latest
-          distribution: fedora32
+          distribution: debian11
         - os: ubuntu-latest
-          distribution: fedora33
+          distribution: fedora34
+        - os: ubuntu-latest
+          distribution: fedora35
         - os: ubuntu-latest
           distribution: ubuntu16.04
         - os: ubuntu-latest

@@ -1,0 +1,25 @@
+{
+    "container_image": "debian:11",
+    "package_manager": "apt",
+    "microsoft_repo": "https://packages.microsoft.com/config/debian/10/packages-microsoft-prod.deb",
+    "build_deps": [
+        "cmake",
+        "git",
+        "libkrb5-dev",
+        "libssl-dev",
+        "make",
+        "openssl",
+        "pkg-config"
+    ],
+    "test_deps": [
+        "gcc",
+        "gss-ntlmssp",
+        "krb5-user",
+        "libkrb5-dev",
+        "openssl",
+        "powershell"
+    ],
+    "cert_staging_dir": "/usr/local/share/ca-certificates",
+    "cert_staging_cmd": "update-ca-certificates",
+    "cert_extension": "crt"
+}

@@ -270,6 +270,18 @@
     delay: 15
     until: domain_user_result is successful
 
+  - name: create 2nd domain username
+    win_domain_user:
+      name: '{{ domain_username }}2'
+      upn: '{{ domain_username }}2@{{ domain_name | upper }}'
+      description: '{{ domain_username }} 2 Domain Account'
+      password: '{{ domain_password }}'
+      password_never_expires: yes
+      update_password: on_create
+      groups:
+      - Domain Admins
+      state: present
+
   - name: test out domain user that was created
     win_whoami:
     register: become_res

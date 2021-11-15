@@ -1,7 +1,7 @@
 {
-    "container_image": "fedora:33",
+    "container_image": "fedora:34",
     "package_manager": "dnf",
-    "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
+    "microsoft_repo": "https://packages.microsoft.com/config/rhel/8/prod.repo",
     "build_deps": [
         "cmake",
         "gcc",

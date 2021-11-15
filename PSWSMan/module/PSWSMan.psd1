@@ -1,5 +1,5 @@
 @{
-    ModuleVersion = '2.3.0'
+    ModuleVersion = '2.3.1'
     RootModule = 'PSWSMan'
     GUID = '92ec96bf-3ff4-41b2-8694-cd3ee636d3fd'
     Author = 'Jordan Borean'

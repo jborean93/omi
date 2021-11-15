@@ -2715,7 +2715,7 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
         if (self->isPrivate)
         {
             // JBOREAN CHANGE: Added GSS_C_DELEG_POLICY_FLAG to get Kerberos delegation working if allowed by the KDC.
-            self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG |  GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG | GSS_C_DELEG_POLICY_FLAG);
+            self->negoFlags = (GSS_C_INTEG_FLAG | GSS_C_CONF_FLAG | GSS_C_REPLAY_FLAG | GSS_C_MUTUAL_FLAG | GSS_C_DELEG_POLICY_FLAG);
         }
         else
         {
@@ -2727,7 +2727,8 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
             mechset = (gss_OID_set) & mechset_krb5;
 
             // Check the username and password
-            if (self->username != NULL)
+            // PowerShell will send an empty string "\0" so use strlen to validate whether it's a valid value or not.
+            if (self->username != NULL && self->password != NULL && strlen(self->password) != 0)
             { int retval = 0;
 
                 char buffer[1024];
@@ -2862,12 +2863,13 @@ static char *_BuildInitialGssAuthHeader(_In_ HttpClient_SR_SocketData * self, MI
             _ReportError(self, "Could not import name ", maj_stat, min_stat);
             return NULL;
         }
-        if (self->password != NULL)
+        // PowerShell will send an empty string "\0" so use strlen to validate whether it's a valid value or not.
+        if (self->password != NULL && strlen(self->password) != 0)
         {
 
             if (!_g_gssClientState.gssAcquireCredwithPassword )
             {
-                trace_HTTP_GssFunctionNotPresent("gss_acquire_creD_with_password");
+                trace_HTTP_GssFunctionNotPresent("gss_acquire_cred_with_password");
             }
             else
             {

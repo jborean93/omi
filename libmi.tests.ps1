@@ -5,12 +5,22 @@ Import-Module -Name PSWSMan
 Import-Module -Name powershell-yaml
 $Global:Config = ConvertFrom-Yaml -Yaml (Get-Content -LiteralPath $PSScriptRoot/integration_environment/inventory.yml -Raw)
 
+Add-Type -Namespace OMI -Name Environment -MemberDefinition @'
+[DllImport("libc")]
+public static extern void setenv(string name, string value);
+
+[DllImport("libc")]
+public static extern void unsetenv(string name);
+'@
+
 $domain = $Global:Config.all.vars.domain_name
 $username = '{0}@{1}' -f ($Global:Config.all.vars.domain_username, $domain.ToUpper())
+$usernameAlt = '{0}2@{1}' -f ($Global:Config.all.vars.domain_username, $domain.ToUpper())
 $password = $Global:Config.all.vars.domain_password
 $hostname = '{0}.{1}' -f ([string]$Global:Config.all.children.windows.hosts.Keys, $domain)
 $Global:TestHostInfo = [PSCustomObject]@{
     Credential = [PSCredential]::new($Username, (ConvertTo-SecureString -AsPlainText -Force -String $Password))
+    AlternateCredential = [PSCredential]::new($usernameAlt, (ConvertTo-SecureString -AsPlainText -Force -String $Password))
     Hostname = $hostname
     HostnameIP = $Global:Config.all.children.windows.hosts.DC01.ansible_host
     NetbiosName = $hostname.Split('.')[0].ToUpper()
@@ -220,6 +230,49 @@ Describe "PSRemoting through WSMan" {
             kdestroy
         }
     }
+
+    # macOS doesn't support DIR ccache type.
+    It "Connects with username only - <Authentication>" -Skip:($Global:Distribution.StartsWith('macOS')) -TestCases (
+        @{ Authentication = 'Negotiate' },
+        @{ Authentication = 'Kerberos' }
+    ) {
+        $invokeParams = @{
+            ComputerName = $Global:TestHostInfo.Hostname
+            ScriptBlock = { whoami.exe /upn }
+        }
+        if ($Authentication -ne 'Negotiate') {
+            $invokeParams.Authentication = $Authentication
+        }
+
+        $dirCcachePath = Join-Path -Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
+        [OMI.Environment]::setenv('KRB5CCNAME', ($env:KRB5CCNAME = "DIR:$dirCcachePath"))
+
+        try {
+            Invoke-Kinit -Credential $Global:TestHostInfo.Credential
+            Invoke-Kinit -Credential $Global:TestHostInfo.AlternateCredential
+
+            # Will use the last credential that was used with kinit
+            $actual = Invoke-Command @invokeParams
+            $actual | Should -Be $Global:TestHostInfo.AlternateCredential.UserName
+
+            # Selects the Credential from the DIR ccache collection
+            $cred1 = [PSCredential]::New($Global:TestHostInfo.Credential.UserName, [SecureString]::new())
+            $actual = Invoke-Command @invokeParams -Credential $cred1
+            $actual | Should -Be $Global:TestHostInfo.Credential.UserName
+
+            # Selects the AlternateCredential from the DIR ccache collection
+            $cred2 = [PSCredential]::New($Global:TestHostInfo.AlternateCredential.UserName, [SecureString]::new())
+            $actual = Invoke-Command @invokeParams -Credential $cred2
+            $actual | Should -Be $Global:TestHostInfo.AlternateCredential.UserName
+        } finally {
+            kdestroy -A
+            [OMI.Environment]::unsetenv('KRB5CCNAME')
+            $env:KRB5CCNAME = $null
+            if (Test-Path -LiteralPath $dirCcachePath) {
+                Remove-Item -LiteralPath $dirCcachePath -Force -Recurse -Confirm:$false
+            }
+        }
+    }
 }
 
 Describe "PSRemoting over HTTPS" {
@@ -260,18 +313,22 @@ Describe "PSRemoting over HTTPS" {
             ScriptBlock = { hostname.exe }
             UseSSL = $true
         }
-        # Debian 8 comes with an older version of pwsh that doesn't have New-PSSessionOption
-        if ((Get-Command -Name New-PSSessionOption -ErrorAction SilentlyContinue)) {
+        # Debian 8 comes with an older version of pwsh that doesn't have New-PSSessionOption.
+        # Also need to skip these params on pwsh 7.2.0 where they actually control cert
+        if (
+            (Get-Command -Name New-PSSessionOption -ErrorAction SilentlyContinue) -and
+            $PSVersionTable.PSVersion -lt [Version]"7.2.0"
+        ) {
             $CommonInvokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
         }
 
         Enable-WSManCertVerification -All
-        [PSWSMan.Native]::unsetenv('SSL_CERT_FILE')
+        [OMI.Environment]::unsetenv('SSL_CERT_FILE')
     }
 
     AfterEach {
         Enable-WSManCertVerification -All
-        [PSWSMan.Native]::unsetenv('SSL_CERT_FILE')
+        [OMI.Environment]::unsetenv('SSL_CERT_FILE')
     }
 
     # ChannelBindingToken doesn't work on SPNEGO with MIT krb5 until after 1.19. Fedora/CentOS 8 seems to have backported
@@ -304,7 +361,7 @@ Describe "PSRemoting over HTTPS" {
     }
 
     It "Trusts a certificate using the SSL_CERT_FILE env var" {
-        [PSWSMan.Native]::setenv('SSL_CERT_FILE',
+        [OMI.Environment]::setenv('SSL_CERT_FILE',
             [IO.Path]::Combine($PSScriptRoot, 'integration_environment', 'cert_setup', 'ca_explicit.pem'))
         $actual = Invoke-Command @CommonInvokeParams -Port $ExplicitCertPort -Authentication Kerberos
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
@@ -315,7 +372,7 @@ Describe "PSRemoting over HTTPS" {
     }
     It "ChannelBindingToken works with certficate - <Name>" -TestCases $cbtInfo {
         # Some newer OpenSSL versions fail to verify certs signed with SHA-1, just skip in that case
-        $skipSHA1 = @('debian10', 'fedora33', 'ubuntu20.04')
+        $skipSHA1 = @('debian10', 'debian11', 'fedora34', 'fedora35', 'ubuntu20.04')
         if ($Global:Distribution -in $skipSHA1 -and $Name -eq 'cbt-sha1') {
             return
         }
@@ -345,6 +402,15 @@ Describe "PSRemoting over HTTPS" {
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
+    It "Ignores a CN failure with session option 7.2+" -Skip:($PSVersionTable.PSVersion -lt [Version]"7.2.0") {
+        $invokeParams = $CommonInvokeParams.Clone()
+        $invokeParams.Port = $BadCNPort
+        $invokeParams.Authentication = "Kerberos"
+        $invokeParams.SessionOption = (New-PSSessionOption -SkipCNCheck)
+        $actual = Invoke-Command @invokeParams
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
+    }
+
     It "Fails to verify the CA - <Scenario>" -TestCases @(
         @{
             Scenario = 'Default'
@@ -362,6 +428,15 @@ Describe "PSRemoting over HTTPS" {
     It "Ignores a CA failure with env value" {
         Disable-WSManCertVerification -CACheck
         $actual = Invoke-Command @CommonInvokeParams -Port $BadCAPort -Authentication Kerberos
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
+    }
+
+    It "Ignores a CA failure with session option 7.2+" -Skip:($PSVersionTable.PSVersion -lt [Version]"7.2.0") {
+        $invokeParams = $CommonInvokeParams.Clone()
+        $invokeParams.Port = $BadCAPort
+        $invokeParams.Authentication = "Kerberos"
+        $invokeParams.SessionOption = (New-PSSessionOption -SkipCACheck)
+        $actual = Invoke-Command @invokeParams
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 
@@ -389,6 +464,15 @@ Describe "PSRemoting over HTTPS" {
     It "Ignores a CA and CN failure" {
         Disable-WSManCertVerification -All
         $actual = Invoke-Command @CommonInvokeParams -Port 5986 -Authentication Kerberos
+        $actual | Should -Be $Global:TestHostInfo.NetbiosName
+    }
+
+    It "Ignores a CA and CN failure with session option 7.2+" -Skip:($PSVersionTable.PSVersion -lt [Version]"7.2.0") {
+        $invokeParams = $CommonInvokeParams.Clone()
+        $invokeParams.Port = 5986
+        $invokeParams.Authentication = "Kerberos"
+        $invokeParams.SessionOption = (New-PSSessionOption -SkipCACheck -SkipCNCheck)
+        $actual = Invoke-Command @invokeParams
         $actual | Should -Be $Global:TestHostInfo.NetbiosName
     }
 }
@@ -430,10 +514,10 @@ Describe "Kerberos delegation" {
 '@
 
             $existingConfig = $env:KRB5_CONFIG
-            [PSWSMan.Native]::setenv('KRB5_CONFIG', "$($tempConfig):$existingConfig")
+            [OMI.Environment]::setenv('KRB5_CONFIG', "$($tempConfig):$existingConfig")
             $actual = Invoke-Command @invokeParams
         } finally {
-            [PSWSMan.Native]::setenv('KRB5_CONFIG', $existingConfig)
+            [OMI.Environment]::setenv('KRB5_CONFIG', $existingConfig)
             Remove-Item -LiteralPath $tempConfig -Force
         }
 
