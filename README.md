@@ -111,6 +111,7 @@ Most problems are split into 3 different categories:
 + [Loading the library](#library-errors)
 + [Authentication failures](#authentication-failures)
 + [WSMan errors](#wsman-errors)
++ [OpenSSL errors](#openssl-errors)
 
 The `libmi` library also has a builtin logging mechanism that you can enable to help with debugging issues at runtime.
 To enable logging for OMI you first need to create a file at `/opt/omi/etc/omicli.conf` with the following contents:
@@ -180,6 +181,33 @@ Have a look through the [distribution_meta](distribution_meta) `.json` files to 
 These are the hardest problems to debug as it's usually a sign of a logic issue in the `libmi` code.
 The best advice I can give you here is to create a debug build of the library using `./build.py --debug` and make sure you have enable the `VERBOSE` level logs in the `omicli.conf` file.
 Hopefully the logs can at least narrow down where the problem lies.
+
+### OpenSSL errors
+
+OMI does not use the HTTPS stack provided by .NET which means it links directly against OpenSSL on the system.
+On Linux hosts this is usually nothing major and will automatically select the same OpenSSL installed by the system's package manager.
+This is a different story on macOS as OpenSSL isn't shipped in a form that can be used by OMI.
+This means macOS needs to install it's own copy of OpenSSL which is typically done with either `brew` or `port`:
+
+```bash
+# brew
+brew install openssl
+
+# port
+port install openssl curl-ca-bundle
+```
+
+_Note: For port the curl-ca-bundle package must also be installed so it's provided with a sane default of trusted root certificates._
+
+Common errors that are encountered when using OpenSSL are:
+
++ No OpenSSL version found when running `Install-WSMan`
+  + For Linux make sure the `openssl` package is installed using the distribution specific package manager
+  + For macOS make sure `openssl` is installed through `brew`, port`, or compile it yourself
+  + For the ARM macOS hosts, make sure `openssl` has been installed with the same architecture as what `pwsh` is running as - archs cannot mix and match in the same process
++ Certificate verification errors
+  + This can be in the form of `certificate verify failed` or `error:16000069:STORE routines::unregistered scheme`
+  + See [the docs on HTTPS validation](https_validation.md) for more information on this topic
 
 ## Known Issues
 
