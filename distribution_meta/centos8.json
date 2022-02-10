@@ -1,7 +1,7 @@
 {
-    "container_image": "centos:8",
+    "container_image": "quay.io/centos/centos:stream8",
     "package_manager": "yum",
-    "microsoft_repo": "https://packages.microsoft.com/config/rhel/7/prod.repo",
+    "microsoft_repo": "https://packages.microsoft.com/config/rhel/8/prod.repo",
     "build_deps": [
         "cmake",
         "gcc",
