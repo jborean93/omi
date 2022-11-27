@@ -22,9 +22,6 @@ on:
     types:
     - published
 
-  schedule:
-  - cron: 0 9 * * *
-
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   POWERSHELL_TELEMETRY_OPTOUT: 1
@@ -126,9 +123,9 @@ jobs:
         - os: ubuntu-latest
           distribution: debian11
         - os: ubuntu-latest
-          distribution: fedora34
+          distribution: fedora36
         - os: ubuntu-latest
-          distribution: fedora35
+          distribution: fedora37
         - os: ubuntu-latest
           distribution: ubuntu16.04
         - os: ubuntu-latest

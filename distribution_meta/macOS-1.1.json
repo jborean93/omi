@@ -2,7 +2,7 @@
     "container_image": "",
     "package_manager": "brew",
     "microsoft_repo": "",
-    "openssl_version": "1.1.1k",
+    "openssl_version": "1.1.1s",
     "build_deps": [
         "cmake",
         "pkg-config"

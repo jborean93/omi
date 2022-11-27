@@ -6,6 +6,7 @@ It documents the changes in each of the tagged releases
 ## 2.3.1 - TBD
 
 + Fix Kerberos auth with username but no password set
++ Fix `Install-WSMan` on PowerShell 7.3.x for macOS
 
 ## 2.3.0 - 2021-11-12
 

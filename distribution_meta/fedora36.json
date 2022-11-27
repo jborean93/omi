@@ -1,5 +1,5 @@
 {
-    "container_image": "fedora:34",
+    "container_image": "fedora:36",
     "package_manager": "dnf",
     "microsoft_repo": "https://packages.microsoft.com/config/rhel/8/prod.repo",
     "build_deps": [
