@@ -53,9 +53,7 @@ jobs:
           distribution: macOS-3
 
     steps:
-    - uses: actions/checkout@v2
-
-    - uses: actions/setup-python@v2
+    - uses: actions/checkout@v3
 
     - name: build
       run: |
@@ -68,7 +66,7 @@ jobs:
         fi
 
     - name: Publish omi and psrpclient for ${{ matrix.distribution }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         path: build/lib/${{ matrix.distribution }}/*
         name: ${{ matrix.distribution }}
@@ -80,12 +78,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-
-    - uses: actions/setup-python@v2
+    - uses: actions/checkout@v3
 
     - name: Download built libs
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v3
       with:
         path: build/lib
 
@@ -97,7 +93,7 @@ jobs:
       run: ./build.py module
 
     - name: Publish PSWSMan nupkg
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         path: build/PSWSMan*.nupkg
         name: PSWSMan
@@ -134,20 +130,16 @@ jobs:
           distribution: ubuntu20.04
         - os: ubuntu-latest
           distribution: archlinux
-        # - os: ubuntu-latest
-        #   distribution: alpine3
         - os: macOS-latest
           distribution: macOS-1.1
         - os: macOS-latest
           distribution: macOS-3
 
     steps:
-    - uses: actions/checkout@v2
-
-    - uses: actions/setup-python@v2
+    - uses: actions/checkout@v3
 
     - name: Download PSWSMan module
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v3
       with:
         name: PSWSMan
         path: build
@@ -172,12 +164,10 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v2
-
-    - uses: actions/setup-python@v2
+    - uses: actions/checkout@v3
 
     - name: Download CI artifacts
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v3
       with:
         path: build/lib
 
@@ -198,6 +188,6 @@ jobs:
         dotnet nuget push build/lib/PSWSMan/PSWSMan*.nupkg
         --api-key "${PSGALLERY_TOKEN}"
         --source "https://www.powershellgallery.com/api/v2/package"
-        --no-symbols true
+        --no-symbols
       env:
         PSGALLERY_TOKEN: ${{ secrets.PSGALLERY_TOKEN }}
