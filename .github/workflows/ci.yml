@@ -134,8 +134,8 @@ jobs:
           distribution: ubuntu20.04
         - os: ubuntu-latest
           distribution: archlinux
-        - os: ubuntu-latest
-          distribution: alpine3
+        # - os: ubuntu-latest
+        #   distribution: alpine3
         - os: macOS-latest
           distribution: macOS-1.1
         - os: macOS-latest
