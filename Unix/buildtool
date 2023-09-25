@@ -290,6 +290,13 @@ if [ -z "$target" ]; then
             distro=`lsb_release -i | awk -F":" '{ print $2 }'`
             distro_version=`lsb_release -r | awk -F":" '{ print $2 }'`
 	    ;;
+	aarch*:Linux:*)
+            os=LINUX
+            arch=ARM
+            compiler=GNU
+            distro=`lsb_release -i | awk -F":" '{ print $2 }'`
+            distro_version=`lsb_release -r | awk -F":" '{ print $2 }'`
+	    ;;
         *)
             echo "$0: error: unsupported platform: $__m:$__s:$__r:$__v"
             exit 1
