@@ -3,6 +3,12 @@
 [![Test workflow](https://github.com/jborean93/omi/actions/workflows/ci.yml/badge.svg)](https://github.com/jborean93/omi/actions/workflows/ci.yml)
 [![PowerShell Gallery](https://img.shields.io/powershellgallery/dt/PSWSMan.svg)](https://www.powershellgallery.com/packages/PSWSMan)
 
+> [!NOTE]
+> This repository is for PSWSMan 2.x or older and is no longer being maintained.
+> The latest PSWSMan >= 3.0.0 is build from [jborean93/PSWSMan](https://github.com/jborean93/PSWSMan), and is based on a pure C# stack with extra features.
+> It is highly encouraged to move onto this new version as it has more features, better error handling, and is still maintained.
+> See the v3.0.0 notes in the [CHANGELOG.md](https://github.com/jborean93/PSWSMan/blob/main/CHANGELOG.md#v300---2026-10-13) for the changes between 2.x and 3.0.0+.
+
 This is a fork of Microsoft [OMI](https://github.com/microsoft/omi) repository.
 Read more about this fork in my blog post [Wacky WSMan on Linux](https://www.bloggingforlogging.com/2020/08/21/wacky-wsman-on-linux/).
 
