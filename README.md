@@ -101,7 +101,7 @@ This is also documented in the `.json` files for each distribution.
 A few thing to note when using the WSMan transport in PowerShell
 
 + When wanting to use Kerberos auth you need to specify the user in the UPN format, e.g. `username@DOMAIN.COM`. Do not use the Netlogon form `DOMAIN\username`
-+ When using Basic auth you MUST connect over HTTPS and skip cert verification by adding `-SessionOption (New-PSSession -SkipCACheck -SkipCNCheck)`
++ When using Basic auth you MUST connect over HTTPS and skip cert verification by adding `-SessionOption (New-PSSessionOption -SkipCACheck -SkipCNCheck)`
   + While this tells PowerShell to skip the certificate checks, this library will still continue to do so
   + See [https_validation](docs/https_validation.md) for more details on this topic
 
